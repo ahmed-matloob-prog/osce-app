@@ -1,0 +1,26 @@
+Station,Name,Type,Time,Scenario,Task1,Task2,Task3,Section,Item,Score1,Score2,Score3
+1,Diarrhea History,history,10,35 years male presented with frequent bowel motion,Take focused history,Reach differential diagnosis,Order investigations,,,,,
+1,,,,,,,,History,How many bowel motion/day (5-6),2,1,0
+1,,,,,,,,History,What is your usual bowel motion? (1/day),2,,0
+1,,,,,,,,History,Consistency and volume (loose to watery),2,1,0
+1,,,,,,,,History,When did the diarrhea start? (6 weeks ago),2,,0
+1,,,,,,,,History,Fever Blood pus mucous in stool,3,1,0
+1,,,,,,,,History,Does the diarrhea stop on fasting,1,,0
+1,,,,,,,,History,Abdominal pain site and Character,2,1,0
+1,,,,,,,,History,Tenesmus (yes),1,,0
+1,,,,,,,,History,Weight loss (yes),1,,0
+1,,,,,,,,PMH,Past medical history,2,1,0
+1,,,,,,,,FH,Family history,1,,0
+1,,,,,,,,Exam,"Vitals: BP 110/70 mmHg, HR 88 bpm, Temp 37.2C. Abdominal Exam: Mild tenderness in the left lower quadrant",,,
+1,,,,,,,,DDX,Chronic diarrhea inflammatory mostly large intestine,2,1,0
+1,,,,,,,,DDX,Ulcerative colitis,2,1,0
+1,,,,,,,,DDX,CA colon,2,1,0
+1,,,,,,,,DDX,Amebiasis,2,1,0
+2,Edema Examination,examination,8,45 years female with bilateral leg swelling,Perform focused physical examination,Present your findings,,,,,,
+2,,,,,,,,Exam,Inspect for pitting vs non-pitting,2,1,0
+2,,,,,,,,Exam,Check distribution bilateral or unilateral,2,1,0
+2,,,,,,,,Exam,Assess JVP,3,1,0
+2,,,,,,,,Exam,Check for ascites,2,,0
+2,,,,,,,,DDX,Heart failure,2,1,0
+2,,,,,,,,DDX,Nephrotic syndrome,2,1,0
+2,,,,,,,,DDX,Liver cirrhosis,2,1,0

@@ -1,0 +1,91 @@
+OSCE STATION TEMPLATE
+=====================
+
+Instructions: Copy this template and fill in your station data.
+Save as .txt file and import into the app.
+
+---BEGIN STATION---
+
+STATION_NUMBER: 1
+STATION_NAME: Diarrhea History
+STATION_TYPE: history
+TIME_LIMIT: 10
+
+SCENARIO:
+35 years male, presented with frequent bowel motion
+
+TASKS:
+1. Take focused history
+2. Reach differential diagnosis
+3. Order appropriate investigations
+
+EXAMINATION_FINDINGS:
+Vitals: BP 110/70 mmHg, HR 88 bpm, Temp 37.2°C
+Abdominal Exam: Mild tenderness in the left lower quadrant
+Rectal Exam: Small amount of blood noted
+Investigation: mild anemia, Stool exam(-ve), C-reactive ↑
+
+CHECKLIST:
+# Format: [score options] Item text
+# Score options: 2/1/0 or 3/1/0 or 1/0 or custom like 3/2/1/0
+
+[2/1/0] How many bowel motion/day (5-6)
+[2/0] What is your usual bowel motion? (1/day)
+[2/1/0] Consistency, volume (loose to watery, small volume)
+[2/0] When did the diarrhea start? (6 weeks ago)
+[3/1/0] Fever (No), Blood (yes), pus in stool (no), mucous (yes)
+[1/0] Does the diarrhea stop on fasting (no)
+[2/1/0] Abdominal pain: site and Character? (Crampy lower pain)
+[1/0] Tenesmus (yes)
+[1/0] Anorexia, vomiting (no)
+[1/0] Recent hospital treatment or antibiotic treatment (No)
+[1/0] Weight loss (yes)
+[1/0] Nocturnal symptoms (yes)
+[2/1/0] Ask about features of steatorrhea (No)
+[2/1/0] Being in a higher risk group (No)
+[2/1/0] Steroid use, antibiotics (No), other Drugs (No)
+[2/1/0] Past medical history (No)
+[1/0] Family history: mother has RA
+[1/0] Past surgical history (No)
+
+DDX:
+[2/1/0] Chronic diarrhea, inflammatory, mostly large intestine
+[2/1/0] DDX: ulcerative colitis
+[2/1/0] DDX: CA colon
+[2/1/0] DDX: amebiasis
+
+---END STATION---
+
+
+============================================
+You can add multiple stations in one file:
+============================================
+
+---BEGIN STATION---
+
+STATION_NUMBER: 2
+STATION_NAME: Edema Examination
+STATION_TYPE: examination
+TIME_LIMIT: 8
+
+SCENARIO:
+45 years female with bilateral leg swelling
+
+TASKS:
+1. Perform focused physical examination
+2. Present your findings
+
+CHECKLIST:
+[2/1/0] Inspect for pitting vs non-pitting
+[2/1/0] Check distribution (bilateral/unilateral)
+[3/1/0] Assess JVP
+[2/0] Check for ascites
+[2/1/0] Examine cardiovascular system
+[1/0] Check sacral edema
+
+DDX:
+[2/1/0] Heart failure
+[2/1/0] Nephrotic syndrome
+[2/1/0] Liver cirrhosis
+
+---END STATION---

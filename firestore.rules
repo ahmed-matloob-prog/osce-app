@@ -1,0 +1,28 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // OSCE App Collections
+    // Note: These rules are permissive for initial deployment
+    // TODO: Add authentication and restrict access per organization
+
+    // Evaluations - exam results
+    match /evaluations/{evaluationId} {
+      allow read, write: if true;
+    }
+
+    // Exams - exam templates
+    match /exams/{examId} {
+      allow read, write: if true;
+    }
+
+    // Candidates - student information
+    match /candidates/{candidateId} {
+      allow read, write: if true;
+    }
+
+    // Catch-all for any other collections
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

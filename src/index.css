@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+/* RTL Support */
+[dir="rtl"] {
+  direction: rtl;
+}
+
+/* Custom scrollbar for better UX on tablets */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a1a1a1;
+}
+
+/* Base styles */
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Touch-friendly buttons */
+button, .btn {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Score buttons - larger touch targets */
+.score-btn {
+  min-width: 56px;
+  min-height: 56px;
+}
+
+/* Arabic font support */
+.font-arabic {
+  font-family: 'Segoe UI', 'Arial', 'Tahoma', sans-serif;
+}
+
+/* Timer pulse animation */
+@keyframes timer-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.timer-warning {
+  animation: timer-pulse 1s ease-in-out infinite;
+}
+
+/* Offline indicator */
+.offline-banner {
+  background: linear-gradient(90deg, #f59e0b, #d97706);
+}
+
+/* Sync indicator animation */
+@keyframes sync-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.sync-spinning {
+  animation: sync-spin 1s linear infinite;
+}

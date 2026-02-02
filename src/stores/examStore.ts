@@ -1,0 +1,267 @@
+import { create } from 'zustand';
+import { v4 as uuidv4 } from 'uuid';
+import { db } from '../db/schema';
+import type {
+  ExamTemplate,
+  Station,
+  Circuit,
+  Evaluation,
+  ExamSession,
+  ItemScore,
+} from '../types';
+
+interface ExamState {
+  // Current data
+  exams: ExamTemplate[];
+  circuits: Circuit[];
+  currentSession: ExamSession | null;
+  currentEvaluation: Evaluation | null;
+
+  // Loading states
+  isLoading: boolean;
+
+  // Actions - Exams
+  loadExams: () => Promise<void>;
+  addExam: (exam: Omit<ExamTemplate, 'id' | 'createdAt' | 'updatedAt'>) => Promise<ExamTemplate>;
+  updateExam: (id: string, updates: Partial<ExamTemplate>) => Promise<void>;
+  deleteExam: (id: string) => Promise<void>;
+
+  // Actions - Circuits
+  loadCircuits: (examId: string) => Promise<void>;
+  addCircuit: (circuit: Omit<Circuit, 'id'>) => Promise<Circuit>;
+  updateCircuit: (id: string, updates: Partial<Circuit>) => Promise<void>;
+  deleteCircuit: (id: string) => Promise<void>;
+
+  // Actions - Session
+  startSession: (session: Omit<ExamSession, 'id' | 'startedAt' | 'isActive'>) => Promise<void>;
+  endSession: () => Promise<void>;
+
+  // Actions - Evaluation
+  startEvaluation: (
+    candidateId: string,
+    station: Station
+  ) => void;
+  updateScore: (itemId: string, score: number) => void;
+  setGlobalRating: (rating: number) => void;
+  setNotes: (notes: string) => void;
+  submitEvaluation: () => Promise<void>;
+  clearCurrentEvaluation: () => void;
+}
+
+export const useExamStore = create<ExamState>((set, get) => ({
+  exams: [],
+  circuits: [],
+  currentSession: null,
+  currentEvaluation: null,
+  isLoading: false,
+
+  // Load all exams from database
+  loadExams: async () => {
+    set({ isLoading: true });
+    try {
+      const exams = await db.examTemplates.toArray();
+      set({ exams, isLoading: false });
+    } catch (error) {
+      console.error('Failed to load exams:', error);
+      set({ isLoading: false });
+    }
+  },
+
+  // Add a new exam
+  addExam: async (examData) => {
+    const exam: ExamTemplate = {
+      ...examData,
+      id: uuidv4(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    await db.examTemplates.add(exam);
+    set((state) => ({ exams: [...state.exams, exam] }));
+    return exam;
+  },
+
+  // Update an exam
+  updateExam: async (id, updates) => {
+    const updatedData = { ...updates, updatedAt: new Date() };
+    await db.examTemplates.update(id, updatedData);
+    set((state) => ({
+      exams: state.exams.map((e) =>
+        e.id === id ? { ...e, ...updatedData } : e
+      ),
+    }));
+  },
+
+  // Delete an exam
+  deleteExam: async (id) => {
+    await db.examTemplates.delete(id);
+    set((state) => ({
+      exams: state.exams.filter((e) => e.id !== id),
+    }));
+  },
+
+  // Load circuits for an exam
+  loadCircuits: async (examId) => {
+    const circuits = await db.circuits.where('examId').equals(examId).toArray();
+    set({ circuits });
+  },
+
+  // Add a circuit
+  addCircuit: async (circuitData) => {
+    const circuit: Circuit = {
+      ...circuitData,
+      id: uuidv4(),
+    };
+    await db.circuits.add(circuit);
+    set((state) => ({ circuits: [...state.circuits, circuit] }));
+    return circuit;
+  },
+
+  // Update a circuit
+  updateCircuit: async (id, updates) => {
+    await db.circuits.update(id, updates);
+    set((state) => ({
+      circuits: state.circuits.map((c) =>
+        c.id === id ? { ...c, ...updates } : c
+      ),
+    }));
+  },
+
+  // Delete a circuit
+  deleteCircuit: async (id) => {
+    await db.circuits.delete(id);
+    set((state) => ({
+      circuits: state.circuits.filter((c) => c.id !== id),
+    }));
+  },
+
+  // Start an exam session
+  startSession: async (sessionData) => {
+    // End any existing active session
+    const existingSession = await db.examSessions.where('isActive').equals(1).first();
+    if (existingSession) {
+      await db.examSessions.update(existingSession.id, { isActive: false });
+    }
+
+    const session: ExamSession = {
+      ...sessionData,
+      id: uuidv4(),
+      startedAt: new Date(),
+      isActive: true,
+    };
+    await db.examSessions.add(session);
+    set({ currentSession: session });
+  },
+
+  // End current session
+  endSession: async () => {
+    const { currentSession } = get();
+    if (currentSession) {
+      await db.examSessions.update(currentSession.id, { isActive: false });
+      set({ currentSession: null, currentEvaluation: null });
+    }
+  },
+
+  // Start evaluating a candidate
+  startEvaluation: (candidateId, station) => {
+    const { currentSession } = get();
+    if (!currentSession) return;
+
+    // Initialize scores with null (unanswered)
+    const scores: ItemScore[] = station.checklistItems.map((item) => ({
+      itemId: item.id,
+      score: -1, // -1 means not scored yet
+    }));
+
+    const maxPossibleScore = station.checklistItems.reduce(
+      (sum, item) => sum + item.maxScore,
+      0
+    );
+
+    const evaluation: Evaluation = {
+      id: uuidv4(),
+      examId: currentSession.examId,
+      circuitId: currentSession.circuitId,
+      candidateId,
+      stationId: station.id,
+      examinerName: currentSession.examinerName,
+      scores,
+      notes: '',
+      startTime: new Date(),
+      totalScore: 0,
+      maxPossibleScore,
+      synced: false,
+    };
+
+    set({ currentEvaluation: evaluation });
+  },
+
+  // Update a score for an item
+  updateScore: (itemId, score) => {
+    set((state) => {
+      if (!state.currentEvaluation) return state;
+
+      const newScores = state.currentEvaluation.scores.map((s) =>
+        s.itemId === itemId ? { ...s, score } : s
+      );
+
+      // Calculate total (only count scored items)
+      const totalScore = newScores.reduce(
+        (sum, s) => sum + (s.score >= 0 ? s.score : 0),
+        0
+      );
+
+      return {
+        currentEvaluation: {
+          ...state.currentEvaluation,
+          scores: newScores,
+          totalScore,
+        },
+      };
+    });
+  },
+
+  // Set global rating
+  setGlobalRating: (rating) => {
+    set((state) => {
+      if (!state.currentEvaluation) return state;
+      return {
+        currentEvaluation: {
+          ...state.currentEvaluation,
+          globalRating: rating,
+        },
+      };
+    });
+  },
+
+  // Set notes
+  setNotes: (notes) => {
+    set((state) => {
+      if (!state.currentEvaluation) return state;
+      return {
+        currentEvaluation: {
+          ...state.currentEvaluation,
+          notes,
+        },
+      };
+    });
+  },
+
+  // Submit the current evaluation
+  submitEvaluation: async () => {
+    const { currentEvaluation } = get();
+    if (!currentEvaluation) return;
+
+    const finalEvaluation: Evaluation = {
+      ...currentEvaluation,
+      endTime: new Date(),
+    };
+
+    await db.evaluations.add(finalEvaluation);
+    set({ currentEvaluation: null });
+  },
+
+  // Clear current evaluation without saving
+  clearCurrentEvaluation: () => {
+    set({ currentEvaluation: null });
+  },
+}));

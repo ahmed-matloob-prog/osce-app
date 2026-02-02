@@ -1,0 +1,201 @@
+export default {
+  // Common
+  common: {
+    appName: 'OSCE Exam',
+    loading: 'Loading...',
+    save: 'Save',
+    cancel: 'Cancel',
+    delete: 'Delete',
+    edit: 'Edit',
+    add: 'Add',
+    submit: 'Submit',
+    next: 'Next',
+    previous: 'Previous',
+    back: 'Back',
+    confirm: 'Confirm',
+    search: 'Search',
+    clear: 'Clear',
+    close: 'Close',
+    yes: 'Yes',
+    no: 'No',
+    ok: 'OK',
+    error: 'Error',
+    success: 'Success',
+    warning: 'Warning',
+  },
+
+  // Navigation
+  nav: {
+    dashboard: 'Dashboard',
+    exams: 'Exams',
+    candidates: 'Candidates',
+    reports: 'Reports',
+    settings: 'Settings',
+  },
+
+  // Dashboard
+  dashboard: {
+    title: 'Dashboard',
+    startExam: 'Start Exam Session',
+    recentActivity: 'Recent Activity',
+    todayStats: "Today's Statistics",
+    candidatesEvaluated: 'Candidates Evaluated',
+    stationsCompleted: 'Stations Completed',
+    pendingSync: 'Pending Sync',
+  },
+
+  // Exam Session
+  session: {
+    setupTitle: 'Start Exam Session',
+    selectExam: 'Select Exam',
+    selectCircuit: 'Circuit Number',
+    selectStation: 'Your Station',
+    examinerName: 'Examiner Name',
+    startSession: 'Start Session',
+    endSession: 'End Session',
+    currentStation: 'Current Station',
+    noExams: 'No exams available. Please create an exam first.',
+  },
+
+  // Active Exam
+  exam: {
+    scenario: 'Scenario',
+    tasks: 'Tasks',
+    checklist: 'Checklist',
+    examinationFindings: 'Examination Findings (Read to student)',
+    globalRating: 'Global Rating',
+    notes: 'Notes',
+    totalScore: 'Total Score',
+    submitEvaluation: 'Submit Evaluation',
+    nextCandidate: 'Next Candidate',
+    timeRemaining: 'Time Remaining',
+    timeUp: 'Time Up!',
+    scanCandidate: 'Scan Candidate',
+    selectCandidate: 'Select Candidate',
+    candidateName: 'Candidate Name',
+  },
+
+  // Scoring
+  scoring: {
+    competent: 'Competent',
+    borderline: 'Borderline',
+    incompetent: 'Incompetent',
+    pass: 'Pass',
+    fail: 'Fail',
+    clearFail: 'Clear fail',
+    goodPass: 'Good pass',
+    excellent: 'Excellent',
+    notScored: 'Not scored',
+  },
+
+  // Candidates
+  candidates: {
+    title: 'Candidates',
+    addCandidate: 'Add Candidate',
+    importCSV: 'Import CSV',
+    candidateNumber: 'Candidate Number',
+    name: 'Name',
+    nameArabic: 'Name (Arabic)',
+    email: 'Email',
+    group: 'Group',
+    stage: 'Stage',
+    semester: 'Semester',
+    noCandidates: 'No candidates yet. Add or import candidates.',
+    importSuccess: '{{count}} candidates imported successfully',
+    deleteConfirm: 'Are you sure you want to delete this candidate?',
+  },
+
+  // Exams Management
+  exams: {
+    title: 'Exam Templates',
+    createExam: 'Create Exam',
+    editExam: 'Edit Exam',
+    examName: 'Exam Name',
+    description: 'Description',
+    stations: 'Stations',
+    addStation: 'Add Station',
+    stationName: 'Station Name',
+    stationNumber: 'Station Number',
+    timeLimit: 'Time Limit (minutes)',
+    checklistItems: 'Checklist Items',
+    addItem: 'Add Item',
+    deleteConfirm: 'Are you sure you want to delete this exam?',
+    noExams: 'No exam templates yet. Create your first exam.',
+  },
+
+  // Reports
+  reports: {
+    title: 'Reports',
+    generateReport: 'Generate Report',
+    exportPDF: 'Export PDF',
+    exportExcel: 'Export Excel',
+    candidateReport: 'Candidate Report',
+    examReport: 'Exam Report',
+    circuitReport: 'Circuit Report',
+    selectExam: 'Select Exam',
+    selectCircuit: 'Select Circuit',
+    dateRange: 'Date Range',
+    averageScore: 'Average Score',
+    passRate: 'Pass Rate',
+    totalCandidates: 'Total Candidates',
+  },
+
+  // Settings
+  settings: {
+    title: 'Settings',
+    language: 'Language',
+    english: 'English',
+    arabic: 'العربية',
+    autoSync: 'Auto Sync',
+    soundAlerts: 'Sound Alerts',
+    timerWarning: 'Timer Warning (seconds)',
+    syncStatus: 'Sync Status',
+    lastSync: 'Last Sync',
+    pendingItems: 'Pending Items',
+    syncNow: 'Sync Now',
+    clearData: 'Clear All Data',
+    clearDataConfirm: 'This will delete all local data. Are you sure?',
+  },
+
+  // Sync Status
+  sync: {
+    online: 'Online',
+    offline: 'Offline',
+    syncing: 'Syncing...',
+    synced: 'Synced',
+    pendingSync: '{{count}} items pending sync',
+    lastSynced: 'Last synced: {{time}}',
+    never: 'Never',
+  },
+
+  // Scanner
+  scanner: {
+    title: 'Scan Candidate',
+    scanning: 'Scanning...',
+    pointCamera: 'Point camera at QR code or barcode',
+    manualEntry: 'Manual Entry',
+    candidateFound: 'Candidate Found',
+    candidateNotFound: 'Candidate not found',
+    tryAgain: 'Try Again',
+    cameraPermission: 'Camera permission required',
+    enableCamera: 'Please enable camera access to scan codes',
+  },
+
+  // Validation
+  validation: {
+    required: 'This field is required',
+    invalidEmail: 'Invalid email address',
+    minLength: 'Minimum {{min}} characters required',
+    maxLength: 'Maximum {{max}} characters allowed',
+  },
+
+  // Errors
+  errors: {
+    generic: 'Something went wrong. Please try again.',
+    loadFailed: 'Failed to load data',
+    saveFailed: 'Failed to save data',
+    deleteFailed: 'Failed to delete',
+    syncFailed: 'Sync failed. Will retry when online.',
+    cameraError: 'Camera error. Please check permissions.',
+  },
+};
