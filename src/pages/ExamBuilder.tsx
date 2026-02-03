@@ -3,8 +3,10 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
 import { useExamStore } from '../stores/examStore';
-import type { Station, ChecklistItem, StationType, ScoringPresetKey, ScoringOption } from '../types';
+import type { Station, ChecklistItem, StationType, ScoringPresetKey, ScoringOption, ExamTemplate } from '../types';
 import { SCORING_PRESETS } from '../types';
+import { hashPin, generateBackupCodes, isValidPinFormat } from '../utils/pinUtils';
+import BackupCodesModal from '../components/BackupCodesModal';
 
 // Lazy load import modal
 const StationImportModal = lazy(() => import('../components/import/StationImportModal'));
@@ -76,6 +78,17 @@ export default function ExamBuilder() {
   const [showImportModal, setShowImportModal] = useState(false);
   const [isLoading, setIsLoading] = useState(!!examId);
 
+  // PIN-related state
+  const [pinEnabled, setPinEnabled] = useState(false);
+  const [adminPin, setAdminPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
+  const [reportsPinEnabled, setReportsPinEnabled] = useState(false);
+  const [reportsPin, setReportsPin] = useState('');
+  const [pinError, setPinError] = useState('');
+  const [showBackupCodesModal, setShowBackupCodesModal] = useState(false);
+  const [backupCodes, setBackupCodes] = useState<string[]>([]);
+  const [pendingExamName, setPendingExamName] = useState('');
+
   // Load existing exam data when editing
   useEffect(() => {
     const loadExamData = async () => {
@@ -102,6 +115,9 @@ export default function ExamBuilder() {
       setExamNameAr(existingExam.nameAr || '');
       setDescription(existingExam.description || '');
       setStations(existingExam.stations.length > 0 ? existingExam.stations : [createEmptyStation(1)]);
+      // Load PIN settings
+      setPinEnabled(existingExam.pinEnabled || false);
+      setReportsPinEnabled(!!existingExam.reportsPin);
       setIsLoading(false);
     } else {
       // Exam not found, redirect to exams list
@@ -281,6 +297,36 @@ export default function ExamBuilder() {
     }
   };
 
+  // Validate PIN settings
+  const validatePinSettings = (): boolean => {
+    if (!pinEnabled) return true;
+
+    // For new exams with PIN enabled, we need a valid PIN
+    if (!examId) {
+      if (!adminPin) {
+        setPinError(t('pin.required', 'Admin PIN is required'));
+        return false;
+      }
+      if (!isValidPinFormat(adminPin)) {
+        setPinError(t('pin.invalidFormat', 'PIN must be 4-6 digits'));
+        return false;
+      }
+      if (adminPin !== confirmPin) {
+        setPinError(t('pin.mismatch', 'PINs do not match'));
+        return false;
+      }
+      if (reportsPinEnabled && reportsPin) {
+        if (!isValidPinFormat(reportsPin)) {
+          setPinError(t('pin.invalidFormat', 'PIN must be 4-6 digits'));
+          return false;
+        }
+      }
+    }
+
+    setPinError('');
+    return true;
+  };
+
   // Save exam
   const handleSave = async () => {
     if (!examName.trim()) {
@@ -288,29 +334,71 @@ export default function ExamBuilder() {
       return;
     }
 
+    // Validate PIN settings
+    if (!validatePinSettings()) {
+      return;
+    }
+
     setIsSaving(true);
     try {
-      const examData = {
+      // Prepare base exam data
+      const baseExamData: Partial<ExamTemplate> = {
         name: examName.trim(),
         nameAr: examNameAr.trim() || undefined,
         description: description.trim(),
         stations: stations.filter(s => s.name.trim()), // Only save stations with names
+        pinEnabled,
+        isLocked: false,
       };
 
-      if (examId) {
-        // Update existing exam
-        await updateExam(examId, examData);
-      } else {
-        // Create new exam
-        await addExam(examData);
+      // Add PIN data for new exams with PIN enabled
+      let backupCodesForModal: string[] = [];
+      if (pinEnabled && !examId && adminPin) {
+        const hashedAdminPin = await hashPin(adminPin);
+        const { plainCodes, hashedCodes } = await generateBackupCodes();
+
+        baseExamData.adminPin = hashedAdminPin;
+        baseExamData.backupCodes = hashedCodes;
+
+        if (reportsPinEnabled && reportsPin) {
+          baseExamData.reportsPin = await hashPin(reportsPin);
+        }
+
+        // Store backup codes for the modal
+        backupCodesForModal = plainCodes;
       }
-      navigate('/exams');
+
+      if (examId) {
+        // Update existing exam (keep existing PIN data)
+        await updateExam(examId, baseExamData);
+        navigate('/exams');
+      } else {
+        // Create new exam - cast to required type for addExam
+        const newExamData = baseExamData as Omit<ExamTemplate, 'id' | 'createdAt' | 'updatedAt'>;
+        await addExam(newExamData);
+
+        // Show backup codes modal if PIN was enabled
+        if (pinEnabled && adminPin) {
+          setBackupCodes(backupCodesForModal);
+          setPendingExamName(examName.trim());
+          setShowBackupCodesModal(true);
+        } else {
+          navigate('/exams');
+        }
+      }
     } catch (error) {
       console.error('Failed to save exam:', error);
       alert(t('errors.saveFailed'));
     } finally {
       setIsSaving(false);
     }
+  };
+
+  // Handle backup codes modal close
+  const handleBackupCodesClose = () => {
+    setShowBackupCodesModal(false);
+    setBackupCodes([]);
+    navigate('/exams');
   };
 
   // Show loading state when loading existing exam
@@ -388,6 +476,157 @@ export default function ExamBuilder() {
               />
             </div>
           </div>
+
+          {/* Security Settings - Only show for new exams or if not already PIN protected */}
+          {!examId && (
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <h2 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                {t('pin.securitySettings', 'Security Settings')}
+              </h2>
+
+              {/* Enable PIN Checkbox */}
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={pinEnabled}
+                  onChange={(e) => {
+                    setPinEnabled(e.target.checked);
+                    if (!e.target.checked) {
+                      setAdminPin('');
+                      setConfirmPin('');
+                      setReportsPinEnabled(false);
+                      setReportsPin('');
+                      setPinError('');
+                    }
+                  }}
+                  className="mt-1 w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <div>
+                  <span className="font-medium text-gray-900">
+                    {t('pin.enableAdminPin', 'Enable Admin PIN')}
+                  </span>
+                  <p className="text-sm text-gray-500 mt-0.5">
+                    {t('pin.enableDescription', 'Protect this exam with a PIN. Required to edit or delete.')}
+                  </p>
+                </div>
+              </label>
+
+              {/* PIN Input Fields - Show when enabled */}
+              {pinEnabled && (
+                <div className="mt-4 space-y-4 pl-8">
+                  {/* Admin PIN */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      {t('pin.adminPin', 'Admin PIN')}
+                    </label>
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={6}
+                      value={adminPin}
+                      onChange={(e) => {
+                        const value = e.target.value.replace(/\D/g, '');
+                        setAdminPin(value);
+                        setPinError('');
+                      }}
+                      placeholder="4-6 digits"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+
+                  {/* Confirm PIN */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      {t('pin.confirmPin', 'Confirm PIN')}
+                    </label>
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={6}
+                      value={confirmPin}
+                      onChange={(e) => {
+                        const value = e.target.value.replace(/\D/g, '');
+                        setConfirmPin(value);
+                        setPinError('');
+                      }}
+                      placeholder="Re-enter PIN"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+
+                  {/* Error Message */}
+                  {pinError && (
+                    <p className="text-red-500 text-sm">{pinError}</p>
+                  )}
+
+                  {/* Reports PIN (Optional) */}
+                  <div className="pt-2 border-t border-gray-100">
+                    <label className="flex items-start gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={reportsPinEnabled}
+                        onChange={(e) => {
+                          setReportsPinEnabled(e.target.checked);
+                          if (!e.target.checked) {
+                            setReportsPin('');
+                          }
+                        }}
+                        className="mt-1 w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <div>
+                        <span className="text-sm font-medium text-gray-700">
+                          {t('pin.enableReportsPin', 'Enable Reports PIN')}
+                        </span>
+                        <p className="text-xs text-gray-500">
+                          {t('pin.reportsPinDescription', 'Separate PIN for viewing reports only')}
+                        </p>
+                      </div>
+                    </label>
+
+                    {reportsPinEnabled && (
+                      <div className="mt-3 ml-7">
+                        <input
+                          type="password"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          maxLength={6}
+                          value={reportsPin}
+                          onChange={(e) => {
+                            const value = e.target.value.replace(/\D/g, '');
+                            setReportsPin(value);
+                          }}
+                          placeholder="4-6 digits"
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Show PIN status for existing exams */}
+          {examId && (
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <h2 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                {t('pin.securitySettings', 'Security Settings')}
+              </h2>
+              <p className="text-sm text-gray-500">
+                {pinEnabled
+                  ? t('pin.protectedExam', 'This exam is PIN protected. PIN settings cannot be changed after creation.')
+                  : t('pin.unprotectedExam', 'This exam is not PIN protected.')}
+              </p>
+            </div>
+          )}
 
           {/* Stations List */}
           <div className="bg-white rounded-xl border border-gray-200 p-4">
@@ -831,6 +1070,14 @@ export default function ExamBuilder() {
           />
         </Suspense>
       )}
+
+      {/* Backup Codes Modal */}
+      <BackupCodesModal
+        isOpen={showBackupCodesModal}
+        onClose={handleBackupCodesClose}
+        codes={backupCodes}
+        examName={pendingExamName}
+      />
     </div>
   );
 }

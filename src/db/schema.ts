@@ -22,8 +22,8 @@ class OSCEDatabase extends Dexie {
     super('OSCEDatabase');
 
     this.version(1).stores({
-      // ExamTemplate: indexed by id, searchable by name
-      examTemplates: 'id, name, createdAt, updatedAt',
+      // ExamTemplate: indexed by id, searchable by name, filterable by lock status
+      examTemplates: 'id, name, createdAt, updatedAt, isLocked, pinEnabled',
 
       // Candidate: indexed by id and candidateNumber (for QR scanning)
       candidates: 'id, candidateNumber, name, group, stage',

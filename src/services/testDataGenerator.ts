@@ -89,6 +89,8 @@ export function generateTestExam(): Omit<ExamTemplate, 'id' | 'createdAt' | 'upd
     nameAr: 'امتحان أوسكي نصف السنة - المرحلة الثانية',
     description: 'Sample exam with 3 stations for testing',
     stations,
+    pinEnabled: false,
+    isLocked: false,
   };
 }
 

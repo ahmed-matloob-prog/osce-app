@@ -39,6 +39,13 @@ export interface Station {
   globalRatingEnabled: boolean;
 }
 
+// Backup code for PIN recovery
+export interface BackupCode {
+  code: string;     // Hashed code (e.g., "ABCD-1234")
+  used: boolean;    // Has it been used?
+  usedAt?: Date;    // When was it used?
+}
+
 // Exam template
 export interface ExamTemplate {
   id: string;
@@ -49,6 +56,15 @@ export interface ExamTemplate {
   stations: Station[];
   createdAt: Date;
   updatedAt: Date;
+
+  // Security fields (PIN system)
+  pinEnabled: boolean;        // Is PIN protection enabled?
+  adminPin?: string;          // Hashed PIN (4-6 digits) - only if pinEnabled
+  reportsPin?: string;        // Optional hashed PIN for reports access
+  backupCodes?: BackupCode[]; // 5 one-time recovery codes - only if pinEnabled
+  isLocked: boolean;          // Exam state (draft/locked) - only matters if pinEnabled
+  lockedAt?: Date;            // When exam was locked
+  lockedBy?: string;          // Device ID that locked
 }
 
 // Candidate
