@@ -22,6 +22,8 @@ export default {
     error: 'خطأ',
     success: 'نجاح',
     warning: 'تحذير',
+    change: 'تغيير',
+    remove: 'إزالة',
   },
 
   // Navigation
@@ -55,6 +57,9 @@ export default {
     endSession: 'إنهاء الجلسة',
     currentStation: 'المحطة الحالية',
     noExams: 'لا توجد امتحانات. يرجى إنشاء امتحان أولاً.',
+    endConfirm: 'هل تريد إنهاء جلسة الامتحان؟',
+    backupPrompt:
+      'تم إنهاء الجلسة.\n\nهذه الدرجات موجودة على هذا الجهاز فقط حتى تتم المزامنة. هل تريد تنزيل ملف نسخة احتياطية الآن؟',
   },
 
   // Active Exam
@@ -73,6 +78,29 @@ export default {
     scanCandidate: 'مسح الطالب',
     selectCandidate: 'اختر الطالب',
     candidateName: 'اسم الطالب',
+    // Sync visibility during a session
+    pendingCount: '{{count}} غير مُرسل',
+    pendingTitle: '{{count}} تقييم لم يُرسل من هذا الجهاز بعد',
+    // تحديد هوية الطالب
+    confirmHeading: 'تأكيد هوية الطالب',
+    confirmPrompt: 'تأكد من مطابقة البيانات للطالب الذي أمامك قبل التقييم.',
+    notThisStudent: 'ليس هذا الطالب',
+    startEvaluation: 'ابدأ التقييم',
+    findPlaceholder: 'الرقم الجامعي أو ابحث بالاسم',
+    notOnRoster: 'الطالب غير موجود في القائمة؟',
+    registerHere: 'سجّله في هذه المحطة',
+    // التحقق من الدائرة
+    wrongCircuitTitle: 'دائرة غير صحيحة',
+    wrongCircuitBody:
+      'هذا الطالب مسجّل في الدائرة {{theirs}}، لكن هذه المحطة في الدائرة {{ours}}.',
+    notCheckedInTitle: 'لم يسجّل حضوره',
+    notCheckedInBody: 'هذا الطالب لم يسجّل حضوره في هذا الامتحان.',
+    scoreAnyway: 'قيّمه على أي حال',
+    showingAll: 'عرض جميع الطلاب',
+    showingCircuit: 'الدائرة {{n}} فقط',
+    showAll: 'عرض الكل',
+    showCircuitOnly: 'عرض هذه الدائرة فقط',
+    noneInCircuit: 'لم يسجّل أي طالب حضوره في هذه الدائرة بعد.',
   },
 
   // Scoring
@@ -147,6 +175,10 @@ export default {
     english: 'English',
     arabic: 'العربية',
     autoSync: 'المزامنة التلقائية',
+    autoSyncOn: 'يرسل الدرجات في الخلفية عند توفر اتصال. لا يفعل شيئاً بدون إنترنت.',
+    autoSyncOff: 'لن يُرسل شيء حتى تضغط "مزامنة الآن". تبقى الدرجات على هذا الجهاز.',
+    autoSyncOffWarning:
+      '{{count}} تقييم موجود على هذا الجهاز فقط. اضغط "مزامنة الآن" أو نزّل ملف نسخة احتياطية أدناه.',
     soundAlerts: 'التنبيهات الصوتية',
     timerWarning: 'تحذير المؤقت (ثواني)',
     syncStatus: 'حالة المزامنة',
@@ -155,6 +187,15 @@ export default {
     syncNow: 'مزامنة الآن',
     clearData: 'مسح جميع البيانات',
     clearDataConfirm: 'سيتم حذف جميع البيانات المحلية. هل أنت متأكد؟',
+    // شارات الطلاب
+    qrCodes: 'شارات QR للطلاب',
+    printQRCodes: 'طباعة شارات QR للطلاب',
+    badgeExam: 'طباعة الشارات لامتحان',
+    badgeSelectExam: 'اختر الامتحان',
+    badgeNoExams: 'لا توجد امتحانات بعد. أنشئ امتحاناً أولاً — كل شارة تحمل اسم الامتحان الخاص بها.',
+    badgeSheetFor: '{{count}} شارة لامتحان {{exam}}',
+    noCandidatesForBadges: 'لا يوجد طلاب بعد. استورد الطلاب أولاً أو أنشئ بيانات تجريبية.',
+    noExamForBadges: 'اختر الامتحان الذي ستُطبع له الشارات. الشارة صالحة فقط للامتحان المطبوع عليها.',
   },
 
   // Sync Status
@@ -246,5 +287,61 @@ export default {
     copied: 'تم النسخ!',
     confirmSaved: 'لقد حفظت رموز الاسترداد هذه في مكان آمن',
     done: 'لقد حفظتها',
+  },
+
+  // Check-In System
+  checkIn: {
+    title: 'تسجيل حضور الطلاب',
+    subtitle: 'تعيين الطلاب للدوائر قبل الامتحان',
+    selectExam: 'اختر الامتحان',
+    selectCircuit: 'اختر الدائرة',
+    noCircuits: 'لم يتم إنشاء دوائر بعد',
+    createCircuits: 'إنشاء دوائر',
+    checkInTo: 'تسجيل الحضور في الدائرة {{number}}',
+    scanQR: 'مسح شارة QR',
+    searchPlaceholder: 'أدخل رقم الطالب أو الاسم',
+    checkIn: 'تسجيل الحضور',
+    success: 'تم تسجيل {{name}} في الدائرة {{circuit}}',
+    alreadyCheckedIn: 'تم تسجيل الحضور مسبقاً',
+    candidateNotFound: 'لم يتم العثور على الطالب',
+    checkedInList: 'تم تسجيل الحضور ({{count}})',
+    noCheckIns: 'لم يتم تسجيل أي طالب بعد',
+    totalCheckedIn: 'طالب مسجل',
+    students: 'طلاب',
+    undo: 'تراجع',
+    badgeUnreadable: 'تعذّرت قراءة الشارة. ابحث بالاسم أو الرقم بدلاً من ذلك.',
+    wrongExamBadge: 'هذه الشارة تخص {{other}} وليس {{current}}.',
+    anotherExam: 'امتحاناً آخر',
+    legacyBadge: 'تم تسجيل الحضور، لكن هذه شارة قديمة لا تحمل اسم الامتحان. أعد طباعة الشارات من الإعدادات.',
+    registerNew: 'الطالب غير مسجّل في القائمة؟ سجّله',
+  },
+
+  // النسخة الاحتياطية المحلية (تختلف عن backup الخاصة برموز استعادة الرمز السري)
+  deviceBackup: {
+    title: 'نسخة احتياطية على هذا الجهاز',
+    subtitle:
+      'يحفظ كل ما على هذا الجهاز في ملف. انسخ الملف إلى حاسوب أو ذاكرة USB — قبل ذلك تبقى البيانات على هذا الجهاز فقط.',
+    evaluations: 'تقييمات',
+    candidates: 'طلاب',
+    notInCloud: 'غير مرفوع',
+    download: 'تنزيل ملف النسخة الاحتياطية',
+    saved: 'تم الحفظ في {{time}} — انسخ الملف خارج الجهاز الآن.',
+    failed: 'تعذّر إنشاء ملف النسخة الاحتياطية.',
+  },
+
+  // التسجيل المتأخر
+  manualEntry: {
+    title: 'تسجيل طالب',
+    subtitle:
+      'للطالب غير الموجود في قائمة الطلاب. يمكن تقييمه فوراً، ويتحقق المسؤول من الرقم الجامعي لاحقاً.',
+    collegeId: 'الرقم الجامعي',
+    collegeIdHint: 'انسخه تماماً كما هو من بطاقة الطالب الجامعية، بما في ذلك الأصفار في البداية.',
+    name: 'الاسم',
+    nameAr: 'الاسم بالعربية',
+    group: 'المجموعة',
+    register: 'تسجيل',
+    clash: 'هذا الرقم الجامعي مسجّل بالفعل لـ:',
+    useExisting: 'استخدم هذا الطالب',
+    editDetails: 'تعديل الرقم',
   },
 };

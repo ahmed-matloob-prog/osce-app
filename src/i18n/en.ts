@@ -22,6 +22,8 @@ export default {
     error: 'Error',
     success: 'Success',
     warning: 'Warning',
+    change: 'Change',
+    remove: 'Remove',
   },
 
   // Navigation
@@ -55,6 +57,9 @@ export default {
     endSession: 'End Session',
     currentStation: 'Current Station',
     noExams: 'No exams available. Please create an exam first.',
+    endConfirm: 'End this exam session?',
+    backupPrompt:
+      'Session ended.\n\nThese marks are only on this tablet until it is synced. Download a backup file now?',
   },
 
   // Active Exam
@@ -73,6 +78,29 @@ export default {
     scanCandidate: 'Scan Candidate',
     selectCandidate: 'Select Candidate',
     candidateName: 'Candidate Name',
+    // Sync visibility during a session
+    pendingCount: '{{count}} unsent',
+    pendingTitle: '{{count}} mark(s) not yet sent from this device',
+    // Identifying the student
+    confirmHeading: 'Confirm the student',
+    confirmPrompt: 'Check this matches the person in front of you before scoring.',
+    notThisStudent: 'Not this student',
+    startEvaluation: 'Start scoring',
+    findPlaceholder: 'College ID, or search by name',
+    notOnRoster: 'Student not on the list?',
+    registerHere: 'Register them at this station',
+    // Circuit checking
+    wrongCircuitTitle: 'Wrong circuit',
+    wrongCircuitBody:
+      'This student is checked into Circuit {{theirs}}, but this station is in Circuit {{ours}}.',
+    notCheckedInTitle: 'Not checked in',
+    notCheckedInBody: 'This student has not checked in for this exam.',
+    scoreAnyway: 'Score anyway',
+    showingAll: 'Showing all candidates',
+    showingCircuit: 'Circuit {{n}} only',
+    showAll: 'Show all',
+    showCircuitOnly: 'Show this circuit only',
+    noneInCircuit: 'Nobody has checked in to this circuit yet.',
   },
 
   // Scoring
@@ -147,6 +175,11 @@ export default {
     english: 'English',
     arabic: 'العربية',
     autoSync: 'Auto Sync',
+    autoSyncOn:
+      'Sends marks in the background whenever there is a connection. Does nothing while offline.',
+    autoSyncOff: 'Nothing is sent until you press Sync Now. Marks stay on this device.',
+    autoSyncOffWarning:
+      '{{count}} mark(s) are on this device only. Press Sync Now, or download a backup file below.',
     soundAlerts: 'Sound Alerts',
     timerWarning: 'Timer Warning (seconds)',
     syncStatus: 'Sync Status',
@@ -155,6 +188,15 @@ export default {
     syncNow: 'Sync Now',
     clearData: 'Clear All Data',
     clearDataConfirm: 'This will delete all local data. Are you sure?',
+    // Candidate badges
+    qrCodes: 'Candidate QR Codes',
+    printQRCodes: 'Print QR Codes for Candidates',
+    badgeExam: 'Print badges for',
+    badgeSelectExam: 'Select exam',
+    badgeNoExams: 'No exams yet. Create an exam first — each badge is stamped with the exam it belongs to.',
+    badgeSheetFor: '{{count}} badges for {{exam}}',
+    noCandidatesForBadges: 'No candidates yet. Import candidates first, or generate test data below.',
+    noExamForBadges: 'Choose which exam these badges are for. A badge is only valid for the exam printed on it.',
   },
 
   // Sync Status
@@ -246,5 +288,61 @@ export default {
     copied: 'Copied!',
     confirmSaved: 'I have saved these backup codes in a safe place',
     done: "I've Saved Them",
+  },
+
+  // Check-In System
+  checkIn: {
+    title: 'Student Check-In',
+    subtitle: 'Assign students to circuits before exam',
+    selectExam: 'Select Exam',
+    selectCircuit: 'Select Circuit',
+    noCircuits: 'No circuits created yet',
+    createCircuits: 'Create Circuits',
+    checkInTo: 'Check In to Circuit {{number}}',
+    scanQR: 'Scan QR Badge',
+    searchPlaceholder: 'Enter candidate number or name',
+    checkIn: 'Check In',
+    success: '{{name}} checked in to Circuit {{circuit}}',
+    alreadyCheckedIn: 'Already checked in',
+    candidateNotFound: 'Candidate not found',
+    checkedInList: 'Checked In ({{count}})',
+    noCheckIns: 'No students checked in yet',
+    totalCheckedIn: 'students checked in',
+    students: 'students',
+    undo: 'Undo',
+    registerNew: 'Student not on the roster? Register them',
+    badgeUnreadable: 'Could not read that badge. Search by name or number instead.',
+    wrongExamBadge: 'This badge is for {{other}}, not {{current}}.',
+    anotherExam: 'another exam',
+    legacyBadge: 'Checked in, but this badge is an old one with no exam on it. Reprint badges from Settings.',
+  },
+
+  // Local data backup (distinct from `backup`, which is PIN recovery codes)
+  deviceBackup: {
+    title: 'Backup to this device',
+    subtitle:
+      'Saves everything on this tablet to a file. Copy that file onto a laptop or USB stick — until you do, it is still only on this device.',
+    evaluations: 'evaluations',
+    candidates: 'candidates',
+    notInCloud: 'not in cloud',
+    download: 'Download backup file',
+    saved: 'Saved at {{time}} — now copy it off this device.',
+    failed: 'Could not create the backup file.',
+  },
+
+  // Late registration
+  manualEntry: {
+    title: 'Register a student',
+    subtitle:
+      'For a student who is not on the roster. They can be scored straight away; an admin checks the college ID afterwards.',
+    collegeId: 'College ID',
+    collegeIdHint: 'Copy it exactly from the student’s college card, including any leading zeros.',
+    name: 'Name',
+    nameAr: 'Name in Arabic',
+    group: 'Group',
+    register: 'Register',
+    clash: 'That college ID already belongs to:',
+    useExisting: 'Use this student',
+    editDetails: 'Change the ID',
   },
 };
