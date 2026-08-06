@@ -72,3 +72,67 @@ button, .btn {
 .sync-spinning {
   animation: sync-spin 1s linear infinite;
 }
+
+/* Badge printing
+   ----------------------------------------------------------------
+   The badge sheet is portalled to <body>, so everything else can be taken
+   out of the print flow entirely. Without this, printing produced the
+   Settings page with a single clipped screenful of badges on it. */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
+
+  body > *:not(.badge-sheet-root) {
+    display: none !important;
+  }
+
+  .badge-print-hide {
+    display: none !important;
+  }
+
+  /* Unwind the modal: no overlay, no fixed positioning, no scroll clipping,
+     so the badges paginate normally across as many pages as they need. */
+  .badge-sheet-root {
+    position: static !important;
+    display: block !important;
+    background: none !important;
+    padding: 0 !important;
+  }
+
+  .badge-sheet-panel {
+    display: block !important;
+    max-width: none !important;
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .badge-sheet-scroll {
+    flex: none !important;
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+    padding: 0 !important;
+  }
+
+  .badge-sheet {
+    display: grid !important;
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 6mm !important;
+  }
+
+  .badge-card {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    border: 1px solid #999 !important;
+  }
+
+  .badge-card img {
+    max-width: 100%;
+    height: auto;
+  }
+}

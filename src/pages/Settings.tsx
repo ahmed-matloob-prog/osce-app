@@ -1,9 +1,13 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useSyncStore } from '../stores/syncStore';
 import { useExamStore } from '../stores/examStore';
 import { useCandidateStore } from '../stores/candidateStore';
 import { generateTestExam, generateTestCandidates, generateQRCodeAsync } from '../services/testDataGenerator';
+import { encodeQR } from '../utils/qrUtils';
+import { downloadBackup, getBackupCounts, type BackupCounts } from '../services/backupExporter';
+import type { Candidate, ExamTemplate } from '../types';
 
 // QR Code Image component that loads async
 function QRCodeImage({ text, size = 150 }: { text: string; size?: number }) {
@@ -27,18 +31,75 @@ function QRCodeImage({ text, size = 150 }: { text: string; size?: number }) {
   return <img src={src} alt={`QR for ${text}`} className="mx-auto mb-2" />;
 }
 
+// A single printable candidate badge, scoped to the exam it was printed for
+function BadgeCard({ candidate, exam }: { candidate: Candidate; exam: ExamTemplate }) {
+  const showArabicName = candidate.nameAr && candidate.nameAr !== candidate.name;
+
+  return (
+    <div className="badge-card border border-gray-300 rounded-lg p-3 text-center bg-white">
+      <QRCodeImage text={encodeQR(exam.id, candidate.candidateNumber)} size={150} />
+      <div className="font-mono text-sm font-bold">{candidate.candidateNumber}</div>
+      <div className="text-sm text-gray-900 leading-snug" dir="auto">
+        {candidate.name}
+      </div>
+      {showArabicName && (
+        <div className="text-sm text-gray-700 leading-snug" dir="rtl">
+          {candidate.nameAr}
+        </div>
+      )}
+      <div className="mt-2 pt-2 border-t border-gray-200 text-xs text-gray-600" dir="auto">
+        {exam.name}
+      </div>
+      {candidate.group && (
+        <div className="text-xs text-gray-500">Group: {candidate.group}</div>
+      )}
+    </div>
+  );
+}
+
 export default function Settings() {
   const { t, i18n } = useTranslation();
-  const { isOnline, pendingCount, lastSyncAt, isSyncing, syncNow, firebaseConfigured, syncError, lastSyncResult } = useSyncStore();
-  const { addExam } = useExamStore();
+  const { isOnline, pendingCount, lastSyncAt, isSyncing, syncNow, firebaseConfigured, syncError, lastSyncResult, autoSync, setAutoSync } = useSyncStore();
+  const { addExam, exams, loadExams } = useExamStore();
   const { candidates, loadCandidates, importCandidates } = useCandidateStore();
   const [isGenerating, setIsGenerating] = useState(false);
   const [showQRModal, setShowQRModal] = useState(false);
+  const [badgeExamId, setBadgeExamId] = useState('');
+  const [backupCounts, setBackupCounts] = useState<BackupCounts | null>(null);
+  const [isBackingUp, setIsBackingUp] = useState(false);
+  const [lastBackupAt, setLastBackupAt] = useState<Date | null>(null);
 
-  // Load candidates on mount for QR code generation
+  // Load candidates and exams on mount — badges need both
   useEffect(() => {
     loadCandidates();
-  }, [loadCandidates]);
+    loadExams();
+    getBackupCounts().then(setBackupCounts).catch(console.error);
+  }, [loadCandidates, loadExams]);
+
+  const handleDownloadBackup = async () => {
+    setIsBackingUp(true);
+    try {
+      const counts = await downloadBackup();
+      setBackupCounts(counts);
+      setLastBackupAt(new Date());
+    } catch (error) {
+      console.error('Backup failed:', error);
+      alert(t('deviceBackup.failed', 'Could not create the backup file.'));
+    } finally {
+      setIsBackingUp(false);
+    }
+  };
+
+  // When there is only one exam it is the obvious answer, so default to it
+  // rather than making the user pick from a list of one.
+  const selectedBadgeExamId = badgeExamId || (exams.length === 1 ? exams[0].id : '');
+  const badgeExam = exams.find((e) => e.id === selectedBadgeExamId);
+
+  // Print in candidate-number order — the sheet gets cut up into a pile of
+  // badges, and IndexedDB's insertion order makes that pile useless.
+  const badgeCandidates = [...candidates].sort((a, b) =>
+    a.candidateNumber.localeCompare(b.candidateNumber, undefined, { numeric: true })
+  );
 
   const changeLanguage = (lang: string) => {
     i18n.changeLanguage(lang);
@@ -76,10 +137,15 @@ export default function Settings() {
     }
   };
 
-  // Print QR codes
+  // Open the badge sheet. Badges carry the exam they belong to, so an exam
+  // has to be picked before any can be generated.
   const handlePrintQRCodes = () => {
     if (candidates.length === 0) {
-      alert('No candidates found. Please add candidates first or generate test data.');
+      alert(t('settings.noCandidatesForBadges', 'No candidates yet. Import candidates first, or generate test data below.'));
+      return;
+    }
+    if (!badgeExam) {
+      alert(t('settings.noExamForBadges', 'Choose which exam these badges are for. A badge is only valid for the exam printed on it.'));
       return;
     }
     setShowQRModal(true);
@@ -183,6 +249,46 @@ export default function Settings() {
             </div>
           )}
 
+          {/* Automatic sync. Off means the manual button below and the
+              end-of-session backup are the only ways data leaves a device. */}
+          <div className="flex items-start justify-between gap-3 pt-1 border-t border-gray-100">
+            <div className="flex-1 pt-2">
+              <div className="text-gray-900 font-medium">
+                {t('settings.autoSync', 'Auto Sync')}
+              </div>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {autoSync
+                  ? t('settings.autoSyncOn', 'Sends marks in the background whenever there is a connection. Does nothing while offline.')
+                  : t('settings.autoSyncOff', 'Nothing is sent until you press Sync Now. Marks stay on this device.')}
+              </p>
+            </div>
+            <button
+              role="switch"
+              aria-checked={autoSync}
+              aria-label={t('settings.autoSync', 'Auto Sync')}
+              onClick={() => setAutoSync(!autoSync)}
+              className={`shrink-0 mt-2 relative w-12 h-7 rounded-full transition-colors ${
+                autoSync ? 'bg-blue-600' : 'bg-gray-300'
+              }`}
+            >
+              <span
+                className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow transition-transform ${
+                  autoSync ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+
+          {!autoSync && pendingCount > 0 && (
+            <div className="text-sm text-orange-700 bg-orange-50 border border-orange-200 rounded-lg p-2">
+              {t('settings.autoSyncOffWarning', {
+                defaultValue:
+                  '{{count}} mark(s) are on this device only. Press Sync Now, or download a backup file below.',
+                count: pendingCount,
+              })}
+            </div>
+          )}
+
           {/* Sync Button */}
           <button
             onClick={() => syncNow()}
@@ -204,6 +310,61 @@ export default function Settings() {
         </div>
       </div>
 
+      {/* Backup. The marks live only on this device until something syncs
+          them, so this is the cheapest way to get a second copy. */}
+      <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
+        <h2 className="font-semibold text-gray-900 mb-1">
+          {t('deviceBackup.title', 'Backup to this device')}
+        </h2>
+        <p className="text-sm text-gray-600 mb-3">
+          {t(
+            'backup.subtitle',
+            'Saves everything on this tablet to a file. Copy that file onto a laptop or USB stick — until you do, it is still only on this device.'
+          )}
+        </p>
+
+        {backupCounts && (
+          <div className="grid grid-cols-3 gap-2 mb-3 text-center">
+            <div className="bg-gray-50 rounded-lg py-2">
+              <div className="text-xl font-bold text-gray-900">{backupCounts.evaluations}</div>
+              <div className="text-xs text-gray-600">{t('deviceBackup.evaluations', 'evaluations')}</div>
+            </div>
+            <div className="bg-gray-50 rounded-lg py-2">
+              <div className="text-xl font-bold text-gray-900">{backupCounts.candidates}</div>
+              <div className="text-xs text-gray-600">{t('deviceBackup.candidates', 'candidates')}</div>
+            </div>
+            <div className={`rounded-lg py-2 ${
+              backupCounts.unsyncedEvaluations > 0 ? 'bg-orange-50' : 'bg-gray-50'
+            }`}>
+              <div className={`text-xl font-bold ${
+                backupCounts.unsyncedEvaluations > 0 ? 'text-orange-600' : 'text-gray-900'
+              }`}>
+                {backupCounts.unsyncedEvaluations}
+              </div>
+              <div className="text-xs text-gray-600">{t('deviceBackup.notInCloud', 'not in cloud')}</div>
+            </div>
+          </div>
+        )}
+
+        <button
+          onClick={handleDownloadBackup}
+          disabled={isBackingUp}
+          className="w-full bg-gray-900 hover:bg-black disabled:bg-gray-400 text-white py-3 rounded-lg font-medium transition-colors"
+        >
+          {isBackingUp
+            ? t('common.loading', 'Saving…')
+            : t('deviceBackup.download', 'Download backup file')}
+        </button>
+
+        {lastBackupAt && (
+          <p className="text-xs text-green-700 mt-2 text-center">
+            {t('deviceBackup.saved', 'Saved at {{time}} — now copy it off this device.', {
+              time: new Intl.DateTimeFormat(i18n.language, { timeStyle: 'medium' }).format(lastBackupAt),
+            })}
+          </p>
+        )}
+      </div>
+
       {/* Test Data & QR Codes */}
       <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
         <h2 className="font-semibold text-gray-900 mb-3">{t('settings.testData', 'Test Data & QR Codes')}</h2>
@@ -215,12 +376,36 @@ export default function Settings() {
           >
             {isGenerating ? t('common.loading') : t('settings.generateTestData', 'Generate Test Data (Exam + Candidates)')}
           </button>
-          <button
-            onClick={handlePrintQRCodes}
-            className="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg font-medium transition-colors"
-          >
-            {t('settings.printQRCodes', 'Print QR Codes for Candidates')} ({candidates.length})
-          </button>
+          <div className="pt-1">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              {t('settings.badgeExam', 'Print badges for')}
+            </label>
+            {exams.length === 0 ? (
+              <p className="text-sm text-gray-500 mb-2">
+                {t('settings.badgeNoExams', 'No exams yet. Create an exam first — each badge is stamped with the exam it belongs to.')}
+              </p>
+            ) : (
+              <select
+                value={selectedBadgeExamId}
+                onChange={(e) => setBadgeExamId(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-4 py-2 mb-2 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">-- {t('settings.badgeSelectExam', 'Select exam')} --</option>
+                {exams.map((exam) => (
+                  <option key={exam.id} value={exam.id}>
+                    {exam.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            <button
+              onClick={handlePrintQRCodes}
+              disabled={!badgeExam || candidates.length === 0}
+              className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white py-2 rounded-lg font-medium transition-colors"
+            >
+              {t('settings.printQRCodes', 'Print QR Codes for Candidates')} ({candidates.length})
+            </button>
+          </div>
         </div>
       </div>
 
@@ -233,32 +418,37 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* QR Code Modal */}
-      {showQRModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b border-gray-200">
-              <h2 className="text-xl font-bold text-gray-900">{t('settings.qrCodes', 'Candidate QR Codes')}</h2>
+      {/* Badge sheet. Portalled to <body> so the print stylesheet can hide the
+          rest of the app and let every badge paginate. */}
+      {showQRModal && badgeExam && createPortal(
+        <div className="badge-sheet-root fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="badge-sheet-panel bg-white rounded-xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="badge-print-hide flex items-center justify-between p-4 border-b border-gray-200">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">{t('settings.qrCodes', 'Candidate QR Codes')}</h2>
+                <p className="text-sm text-gray-500">
+                  {t('settings.badgeSheetFor', '{{count}} badges for {{exam}}', {
+                    count: candidates.length,
+                    exam: badgeExam.name,
+                  })}
+                </p>
+              </div>
               <button
                 onClick={() => setShowQRModal(false)}
                 className="text-gray-500 hover:text-gray-700 text-2xl leading-none"
+                aria-label={t('common.close', 'Close')}
               >
                 &times;
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-4">
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 print:grid-cols-4">
-                {candidates.map((candidate) => (
-                  <div key={candidate.id} className="border border-gray-200 rounded-lg p-3 text-center">
-                    <QRCodeImage text={candidate.candidateNumber} size={150} />
-                    <div className="font-mono text-sm font-bold">{candidate.candidateNumber}</div>
-                    <div className="text-xs text-gray-600 truncate" dir="rtl">{candidate.nameAr || candidate.name}</div>
-                    <div className="text-xs text-gray-500">{candidate.group || ''}</div>
-                  </div>
+            <div className="badge-sheet-scroll flex-1 overflow-y-auto p-4">
+              <div className="badge-sheet grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {badgeCandidates.map((candidate) => (
+                  <BadgeCard key={candidate.id} candidate={candidate} exam={badgeExam} />
                 ))}
               </div>
             </div>
-            <div className="flex items-center justify-between p-4 border-t border-gray-200 bg-gray-50">
+            <div className="badge-print-hide flex items-center justify-between p-4 border-t border-gray-200 bg-gray-50">
               <button
                 onClick={() => setShowQRModal(false)}
                 className="px-4 py-2 text-gray-600 hover:text-gray-900"
@@ -273,7 +463,8 @@ export default function Settings() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
