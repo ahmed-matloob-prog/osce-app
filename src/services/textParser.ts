@@ -77,8 +77,8 @@ function parseStationBlock(block: string): ParsedStation {
   };
 
   let currentSection = '';
-  let checklistItems: ChecklistItem[] = [];
-  let ddxItems: ChecklistItem[] = [];
+  const checklistItems: ChecklistItem[] = [];
+  const ddxItems: ChecklistItem[] = [];
 
   for (const line of lines) {
     // Skip empty lines and comments
@@ -134,15 +134,16 @@ function parseStationBlock(block: string): ParsedStation {
         station.scenario = (station.scenario ? station.scenario + ' ' : '') + line;
         break;
 
-      case 'tasks':
+      case 'tasks': {
         // Parse numbered tasks like "1. Take focused history"
-        const taskMatch = line.match(/^\d+[\.\)]\s*(.+)$/);
+        const taskMatch = line.match(/^\d+[.)]\s*(.+)$/);
         if (taskMatch) {
           station.tasks!.push(taskMatch[1].trim());
         } else if (line.length > 2) {
           station.tasks!.push(line);
         }
         break;
+      }
 
       case 'findings':
         station.examinationFindings = (station.examinationFindings ? station.examinationFindings + '\n' : '') + line;

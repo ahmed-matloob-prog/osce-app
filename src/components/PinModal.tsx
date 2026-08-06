@@ -43,28 +43,6 @@ export default function PinModal({
     }
   }, [isOpen]);
 
-  // Handle keyboard input
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key >= '0' && e.key <= '9' && pin.length < maxLength) {
-        setPin(prev => prev + e.key);
-        setError('');
-      } else if (e.key === 'Backspace') {
-        setPin(prev => prev.slice(0, -1));
-        setError('');
-      } else if (e.key === 'Enter' && pin.length >= minLength) {
-        handleSubmit();
-      } else if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, pin, maxLength, minLength, onClose]);
-
   const handleDigitPress = (digit: string) => {
     if (pin.length < maxLength) {
       setPin(prev => prev + digit);
@@ -119,6 +97,29 @@ export default function PinModal({
       setIsLoading(false);
     }
   }, [pin, minLength, mode, confirmPin, onSubmit, t]);
+
+  // Keyboard input. Declared after handleSubmit so it can depend on it —
+  // listing it earlier would read the binding before initialisation.
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key >= '0' && e.key <= '9' && pin.length < maxLength) {
+        setPin(prev => prev + e.key);
+        setError('');
+      } else if (e.key === 'Backspace') {
+        setPin(prev => prev.slice(0, -1));
+        setError('');
+      } else if (e.key === 'Enter' && pin.length >= minLength) {
+        handleSubmit();
+      } else if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, pin, maxLength, minLength, onClose, handleSubmit]);
 
   // Auto-submit when PIN reaches max length in verify mode
   useEffect(() => {

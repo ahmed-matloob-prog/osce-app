@@ -84,7 +84,7 @@ function parseChecklistLine(line: string): ChecklistItem | null {
   const maxScore = Math.max(...scoringOptions.map(o => o.value));
 
   // Extract item text (remove scoring brackets and clean up)
-  let text = line
+  const text = line
     .replace(/\[\d+(?:\s+\d+)?\]/g, '') // Remove scoring brackets
     .replace(/\\_+/g, '') // Remove underscores
     .replace(/\\\(/g, '(') // Fix escaped parentheses
@@ -207,8 +207,8 @@ export async function parseWordDocument(file: File): Promise<ParsedStation> {
     }
 
     // Detect tasks (numbered list)
-    if (/^\d+[\.\)]\s*/.test(line) && currentSection === 'scenario') {
-      const taskText = line.replace(/^\d+[\.\)]\s*/, '').trim();
+    if (/^\d+[.)]\s*/.test(line) && currentSection === 'scenario') {
+      const taskText = line.replace(/^\d+[.)]\s*/, '').trim();
       if (taskText && !taskText.toLowerCase().includes('total mark')) {
         station.tasks?.push(taskText);
       }

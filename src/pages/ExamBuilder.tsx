@@ -89,17 +89,17 @@ export default function ExamBuilder() {
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
   const [pendingExamName, setPendingExamName] = useState('');
 
-  // Load existing exam data when editing
+  // Load existing exam data when editing.
+  //
+  // Loads unconditionally rather than guarding on `exams.length === 0`. The
+  // guard read a value the effect did not depend on, so it would have gone
+  // stale; re-reading the table is cheap and always correct.
   useEffect(() => {
+    if (!examId) return;
+
     const loadExamData = async () => {
-      if (!examId) return;
-
       setIsLoading(true);
-
-      // Make sure exams are loaded
-      if (exams.length === 0) {
-        await loadExams();
-      }
+      await loadExams();
     };
 
     loadExamData();

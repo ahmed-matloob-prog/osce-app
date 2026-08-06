@@ -13,12 +13,13 @@ export default function SessionSetup() {
   const [selectedCircuitId, setSelectedCircuitId] = useState('');
   const [circuitNumber, setCircuitNumber] = useState('1');
   const [selectedStationId, setSelectedStationId] = useState('');
-  const [examinerName, setExaminerName] = useState('');
+  // Read straight into the initial state rather than through an effect, so
+  // there is no first render with an empty box before the name appears.
+  const [examinerName, setExaminerName] = useState(
+    () => localStorage.getItem('examinerName') ?? ''
+  );
 
-  // Load saved examiner name from localStorage
   useEffect(() => {
-    const savedName = localStorage.getItem('examinerName');
-    if (savedName) setExaminerName(savedName);
     loadExams();
   }, [loadExams]);
 
@@ -29,15 +30,12 @@ export default function SessionSetup() {
     }
   }, [selectedExamId, loadCircuits]);
 
-  // Auto-select circuit if there's only one or none
-  useEffect(() => {
-    if (circuits.length === 1) {
-      setSelectedCircuitId(circuits[0].id);
-    } else if (circuits.length === 0 && selectedExamId) {
-      // Will create a default circuit
-      setSelectedCircuitId('new');
-    }
-  }, [circuits, selectedExamId]);
+  // Derived rather than pushed into state by an effect. With exactly one
+  // circuit that circuit is the only sensible answer; with none, fall through
+  // to creating one. An explicit choice always wins.
+  const effectiveCircuitId =
+    selectedCircuitId ||
+    (circuits.length === 1 ? circuits[0].id : selectedExamId ? 'new' : '');
 
   const selectedExam = exams.find((e) => e.id === selectedExamId);
 
@@ -49,10 +47,10 @@ export default function SessionSetup() {
     // Save examiner name for next time
     localStorage.setItem('examinerName', examinerName);
 
-    let circuitId = selectedCircuitId;
+    let circuitId = effectiveCircuitId;
 
     // Create a new circuit if none exists
-    if (selectedCircuitId === 'new' || !selectedCircuitId) {
+    if (effectiveCircuitId === 'new' || !effectiveCircuitId) {
       const newCircuit = await addCircuit({
         examId: selectedExamId,
         circuitNumber: parseInt(circuitNumber) || 1,
@@ -73,7 +71,7 @@ export default function SessionSetup() {
     navigate('/exam/active');
   };
 
-  const canStart = selectedExamId && selectedStationId && examinerName.trim() && (selectedCircuitId || circuitNumber);
+  const canStart = selectedExamId && selectedStationId && examinerName.trim() && (effectiveCircuitId || circuitNumber);
 
   return (
     <div className="p-4 md:p-6 max-w-xl mx-auto">
@@ -123,7 +121,7 @@ export default function SessionSetup() {
               </label>
               {circuits.length > 0 ? (
                 <select
-                  value={selectedCircuitId}
+                  value={effectiveCircuitId}
                   onChange={(e) => setSelectedCircuitId(e.target.value)}
                   className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
                 >
@@ -146,7 +144,7 @@ export default function SessionSetup() {
                   className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
               )}
-              {selectedCircuitId === 'new' && (
+              {effectiveCircuitId === 'new' && (
                 <input
                   type="number"
                   value={circuitNumber}

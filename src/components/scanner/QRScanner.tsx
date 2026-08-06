@@ -61,6 +61,13 @@ export default function QRScanner({ onScan, onError, onClose }: QRScannerProps) 
       aspectRatio: 1.0,
     };
 
+    // This effect drives an imperative resource — it starts a camera and stops
+    // it again on cleanup — and the UI has to show "starting" before the async
+    // start begins, so these cannot move into the promise chain. Deriving the
+    // flag from "which camera is actually running" would satisfy the rule, but
+    // that is a behavioural change to camera switching which cannot be tested
+    // here, since headless browsers have no camera. Left as-is deliberately.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsStarting(true);
     setError(null);
 
