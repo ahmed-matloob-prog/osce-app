@@ -1,32 +1,37 @@
 rules_version = '2';
 
-// OSCE Exam App — Firestore security rules
+// Firestore security rules for the `skill-lab-web` project.
 //
-// These replace a ruleset that granted `allow read, write: if true` on every
-// collection plus a catch-all. That made every student's name, candidate
-// number and mark readable and writable by anyone who knew the project id —
-// and the project id ships inside the app's JavaScript, so effectively by
-// anyone who opened the deployed site.
+// IMPORTANT: this project is shared. As well as the OSCE exam app, it holds
+// collections belonging to another application — users, passwords, groups,
+// students, attendance, assessments. Those are left exactly as they were
+// found, because tightening rules for an app whose auth model is unknown
+// would take it offline. Replacing this file with OSCE-only rules would do
+// the same by omission: a collection with no matching allow rule is denied.
 //
-// WHAT THIS DOES AND DOES NOT GIVE YOU
+// ── OSCE app ────────────────────────────────────────────────────────────────
 //
-// The app has no user accounts, so there is nothing to authenticate as. Every
-// device signs in anonymously instead, which lets these rules demand that a
-// request carry *some* identity. That closes the door on casual access — you
-// can no longer read the database with a plain HTTP request — but anyone can
-// obtain an anonymous session of their own. Turn on App Check as well, which
-// requires requests to come from your app rather than from a script.
+// The OSCE collections previously granted `allow read, write: if true`, so
+// every student name, candidate number and mark was readable and writable by
+// anyone who knew the project id — and the project id ships inside the app's
+// JavaScript. They now require a signed-in session.
 //
-// Real access control, where an examiner can only see their own institution's
-// exams, needs real accounts. That is Phase 1 of the commercial plan.
+// The app has no user accounts, so each device signs in anonymously. That is a
+// bar, not a wall: anyone can obtain an anonymous session too. Enable App Check
+// as well so requests must come from your app. Real access control needs real
+// accounts.
 //
-// DEPLOY IN THIS ORDER, or sync will break:
+// DEPLOY IN THIS ORDER, or OSCE sync breaks:
 //   1. Firebase console → Authentication → Sign-in method → enable Anonymous
 //   2. Deploy the app build that signs in anonymously
 //   3. Deploy these rules
 //
-// Deploy with:  firebase deploy --only firestore:rules
-// Or paste into: Firebase console → Firestore Database → Rules
+// ── Still to do ─────────────────────────────────────────────────────────────
+//
+// The collections in the "other application" block below are still open to
+// anyone. `passwords` in particular is world-readable AND world-writable.
+// They need the same treatment as the OSCE ones, but that has to be done by
+// someone who knows how that app authenticates.
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -53,8 +58,10 @@ service cloud.firestore {
         .hasOnly(['synced', 'syncedAt']);
     }
 
+    // ─── OSCE exam app ──────────────────────────────────────────────────────
+
     // Exam templates — stations, checklists, scoring. Not deletable from a
-    // device: losing an exam template orphans every mark that references it.
+    // device: losing a template orphans every mark that references it.
     match /exams/{examId} {
       allow read: if signedIn();
       allow create, update: if signedIn();
@@ -86,10 +93,34 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Anything not named above is denied. The previous ruleset had a
-    // catch-all that allowed everything instead.
-    match /{document=**} {
-      allow read, write: if false;
+    // ─── Other application — UNCHANGED, still open to anyone ────────────────
+    //
+    // Left as found so this deploy cannot break that app. Every one of these
+    // still allows unauthenticated read and write. See the note at the top.
+
+    match /users/{userId} {
+      allow read, write: if true; // POC: Allow all access
+    }
+
+    // WARNING: world-readable and world-writable credentials store.
+    match /passwords/{username} {
+      allow read, write: if true; // POC: Allow all access
+    }
+
+    match /groups/{groupId} {
+      allow read, write: if true; // Allow all admins to read/write groups
+    }
+
+    match /students/{studentId} {
+      allow read, write: if true; // Allow all admins to read/write students
+    }
+
+    match /attendance/{recordId} {
+      allow read, write: if true; // Allow trainers and admins to track attendance
+    }
+
+    match /assessments/{recordId} {
+      allow read, write: if true; // Allow trainers and admins to record assessments
     }
   }
 }
