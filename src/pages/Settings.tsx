@@ -6,7 +6,14 @@ import { useExamStore } from '../stores/examStore';
 import { useCandidateStore } from '../stores/candidateStore';
 import { generateTestExam, generateTestCandidates, generateQRCodeAsync } from '../services/testDataGenerator';
 import { encodeQR } from '../utils/qrUtils';
-import { downloadBackup, getBackupCounts, type BackupCounts } from '../services/backupExporter';
+import {
+  downloadBackup,
+  getBackupCounts,
+  readBackupFile,
+  restoreBackup,
+  BackupParseError,
+  type BackupCounts,
+} from '../services/backupExporter';
 import type { Candidate, ExamTemplate } from '../types';
 
 // QR Code Image component that loads async
@@ -67,6 +74,7 @@ export default function Settings() {
   const [badgeExamId, setBadgeExamId] = useState('');
   const [backupCounts, setBackupCounts] = useState<BackupCounts | null>(null);
   const [isBackingUp, setIsBackingUp] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
   const [lastBackupAt, setLastBackupAt] = useState<Date | null>(null);
 
   // Load candidates and exams on mount — badges need both
@@ -75,6 +83,58 @@ export default function Settings() {
     loadExams();
     getBackupCounts().then(setBackupCounts).catch(console.error);
   }, [loadCandidates, loadExams]);
+
+  const handleRestoreBackup = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    // Reset immediately so picking the same file twice still fires a change
+    event.target.value = '';
+    if (!file) return;
+
+    setIsRestoring(true);
+    try {
+      const backup = await readBackupFile(file);
+
+      // Show what is in the file before touching anything.
+      const c = backup.counts;
+      const proceed = confirm(
+        t('deviceBackup.restoreConfirm', {
+          defaultValue:
+            'Restore from {{date}}?\n\n{{evaluations}} evaluations\n{{candidates}} candidates\n{{exams}} exams\n\nAnything already on this device is kept — nothing is overwritten.',
+          date: new Date(backup.exportedAt).toLocaleString(i18n.language),
+          evaluations: c.evaluations,
+          candidates: c.candidates,
+          exams: c.exams,
+        })
+      );
+      if (!proceed) return;
+
+      const summary = await restoreBackup(backup);
+      await Promise.all([loadCandidates(), loadExams()]);
+      setBackupCounts(await getBackupCounts());
+
+      const line = (label: string, r: { restored: number; skipped: number }) =>
+        `${label}: ${r.restored} restored, ${r.skipped} already here`;
+      alert(
+        [
+          t('deviceBackup.restoreDone', 'Restore complete.'),
+          '',
+          line(t('deviceBackup.evaluations', 'evaluations'), summary.evaluations),
+          line(t('deviceBackup.candidates', 'candidates'), summary.candidates),
+          line(t('deviceBackup.exams', 'exams'), summary.exams),
+          line(t('deviceBackup.checkIns', 'check-ins'), summary.checkIns),
+        ].join('\n')
+      );
+    } catch (error) {
+      console.error('Restore failed:', error);
+      alert(
+        error instanceof BackupParseError
+          ? error.message
+          : t('deviceBackup.restoreFailed', 'Could not restore from that file.')
+      );
+    } finally {
+      setIsRestoring(false);
+    }
+  };
 
   const handleDownloadBackup = async () => {
     setIsBackingUp(true);
@@ -363,6 +423,27 @@ export default function Settings() {
             })}
           </p>
         )}
+
+        {/* Restore. Additive only, so it can be used on a replacement tablet
+            without risking whatever is already on it. */}
+        <div className="mt-4 pt-4 border-t border-gray-200">
+          <label className="block">
+            <span className="sr-only">{t('deviceBackup.restore', 'Restore from a backup file')}</span>
+            <input
+              type="file"
+              accept="application/json,.json"
+              onChange={handleRestoreBackup}
+              disabled={isRestoring}
+              className="block w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-gray-100 file:text-gray-800 file:font-medium hover:file:bg-gray-200 file:cursor-pointer disabled:opacity-50"
+            />
+          </label>
+          <p className="text-xs text-gray-500 mt-2">
+            {t(
+              'deviceBackup.restoreHint',
+              'Restoring adds anything missing. Records already on this device are kept as they are.'
+            )}
+          </p>
+        </div>
       </div>
 
       {/* Test Data & QR Codes */}

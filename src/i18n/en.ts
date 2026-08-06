@@ -328,6 +328,14 @@ export default {
     download: 'Download backup file',
     saved: 'Saved at {{time}} — now copy it off this device.',
     failed: 'Could not create the backup file.',
+    exams: 'exams',
+    checkIns: 'check-ins',
+    restore: 'Restore from a backup file',
+    restoreHint: 'Restoring adds anything missing. Records already on this device are kept as they are.',
+    restoreConfirm:
+      'Restore from {{date}}?\n\n{{evaluations}} evaluations\n{{candidates}} candidates\n{{exams}} exams\n\nAnything already on this device is kept — nothing is overwritten.',
+    restoreDone: 'Restore complete.',
+    restoreFailed: 'Could not restore from that file.',
   },
 
   // Late registration

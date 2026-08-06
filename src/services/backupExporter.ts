@@ -1,5 +1,6 @@
-import { db } from '../db/schema';
+import { db, normalizeCandidateNumber } from '../db/schema';
 import { getDeviceId } from '../utils/pinUtils';
+import type { Candidate, Circuit, CheckIn, Evaluation, ExamTemplate } from '../types';
 
 /**
  * Local backup of everything this device holds.
@@ -98,6 +99,131 @@ export function backupFilename(exportedAt: string, deviceId: string): string {
   // otherwise every file collected onto one laptop ends in "-device".
   const suffix = deviceId.replace(/^device-/, '').slice(0, 8) || 'unknown';
   return `osce-backup-${stamp}-${suffix}.json`;
+}
+
+// Restore
+// ---------------------------------------------------------------------------
+
+export interface RestoreSummary {
+  exams: { restored: number; skipped: number };
+  circuits: { restored: number; skipped: number };
+  candidates: { restored: number; skipped: number };
+  checkIns: { restored: number; skipped: number };
+  evaluations: { restored: number; skipped: number };
+}
+
+export class BackupParseError extends Error {}
+
+/**
+ * Read and validate a backup file without touching the database, so the UI can
+ * show what is in it before anything is applied.
+ */
+export async function readBackupFile(file: File): Promise<BackupFile> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await file.text());
+  } catch {
+    throw new BackupParseError('That file is not readable as a backup.');
+  }
+
+  const backup = parsed as Partial<BackupFile>;
+  if (backup?.format !== BACKUP_FORMAT) {
+    throw new BackupParseError('That file is not an OSCE backup.');
+  }
+  if (typeof backup.version !== 'number' || backup.version > BACKUP_VERSION) {
+    throw new BackupParseError(
+      'That backup was made by a newer version of the app. Update before restoring.'
+    );
+  }
+
+  return backup as BackupFile;
+}
+
+/**
+ * Merge a backup into this device.
+ *
+ * Additive only — a record whose id already exists is left alone rather than
+ * overwritten. Restoring is something you reach for when a device has died, so
+ * it must never be capable of destroying data on the device doing the
+ * restoring. The trade-off is that it cannot repair a corrupted record; for
+ * that, clear the data first and then restore.
+ *
+ * Dates come back from JSON as strings and are revived, otherwise anything
+ * that formats or sorts by them breaks.
+ */
+export async function restoreBackup(backup: BackupFile): Promise<RestoreSummary> {
+  const summary: RestoreSummary = {
+    exams: { restored: 0, skipped: 0 },
+    circuits: { restored: 0, skipped: 0 },
+    candidates: { restored: 0, skipped: 0 },
+    checkIns: { restored: 0, skipped: 0 },
+    evaluations: { restored: 0, skipped: 0 },
+  };
+
+  const date = (v: unknown) => (v ? new Date(v as string) : undefined);
+
+  const exams = (backup.exams ?? []) as ExamTemplate[];
+  const circuits = (backup.circuits ?? []) as Circuit[];
+  const candidates = (backup.candidates ?? []) as Candidate[];
+  const checkIns = (backup.checkIns ?? []) as CheckIn[];
+  const evaluations = (backup.evaluations ?? []) as Evaluation[];
+
+  for (const exam of exams) {
+    if (await db.examTemplates.get(exam.id)) { summary.exams.skipped++; continue; }
+    await db.examTemplates.add({
+      ...exam,
+      createdAt: date(exam.createdAt) ?? new Date(),
+      updatedAt: date(exam.updatedAt) ?? new Date(),
+      lockedAt: date(exam.lockedAt),
+    });
+    summary.exams.restored++;
+  }
+
+  for (const circuit of circuits) {
+    if (await db.circuits.get(circuit.id)) { summary.circuits.skipped++; continue; }
+    await db.circuits.add(circuit);
+    summary.circuits.restored++;
+  }
+
+  for (const candidate of candidates) {
+    // Skip on either key: the id may be new while the college ID is already
+    // taken, and candidateNumber is a unique index that would throw.
+    const number = normalizeCandidateNumber(candidate.candidateNumber);
+    const clash =
+      (await db.candidates.get(candidate.id)) ||
+      (await db.candidates.where('candidateNumber').equals(number).first());
+    if (clash) { summary.candidates.skipped++; continue; }
+
+    await db.candidates.add({
+      ...candidate,
+      candidateNumber: number,
+      registeredAt: date(candidate.registeredAt),
+    });
+    summary.candidates.restored++;
+  }
+
+  for (const checkIn of checkIns) {
+    if (await db.checkIns.get(checkIn.id)) { summary.checkIns.skipped++; continue; }
+    await db.checkIns.add({
+      ...checkIn,
+      checkedInAt: date(checkIn.checkedInAt) ?? new Date(),
+      syncedAt: date(checkIn.syncedAt),
+    });
+    summary.checkIns.restored++;
+  }
+
+  for (const evaluation of evaluations) {
+    if (await db.evaluations.get(evaluation.id)) { summary.evaluations.skipped++; continue; }
+    await db.evaluations.add({
+      ...evaluation,
+      startTime: date(evaluation.startTime) ?? new Date(),
+      endTime: date(evaluation.endTime),
+      syncedAt: date(evaluation.syncedAt),
+    });
+    summary.evaluations.restored++;
+  }
+
+  return summary;
 }
 
 /** Build a backup and hand it to the browser as a download. */
