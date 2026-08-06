@@ -50,6 +50,14 @@ export default function Dashboard() {
         {t('dashboard.startExam')}
       </Link>
 
+      {/* Check-In Button */}
+      <Link
+        to="/checkin"
+        className="block w-full bg-green-600 hover:bg-green-700 text-white text-center py-3 px-6 rounded-xl font-semibold text-lg shadow-lg shadow-green-200 transition-all active:scale-[0.98] mt-4"
+      >
+        {t('checkIn.title', 'Student Check-In')}
+      </Link>
+
       {/* Quick Links */}
       <div className="grid grid-cols-2 gap-4 mt-6">
         <Link

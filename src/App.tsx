@@ -14,6 +14,7 @@ import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import SessionSetup from './pages/SessionSetup';
 import ActiveExam from './pages/ActiveExam';
+import CheckIn from './pages/CheckIn';
 
 // Layout
 import Layout from './components/ui/Layout';
@@ -40,6 +41,10 @@ function App() {
           {/* Exam Session Routes */}
           <Route path="/session/setup" element={<SessionSetup />} />
           <Route path="/exam/active" element={<ActiveExam />} />
+
+          {/* Check-In Routes */}
+          <Route path="/checkin" element={<CheckIn />} />
+          <Route path="/checkin/:examId" element={<CheckIn />} />
 
           {/* 404 */}
           <Route path="*" element={<div className="p-6 text-center">Page not found</div>} />
