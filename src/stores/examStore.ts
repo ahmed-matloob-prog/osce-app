@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../db/schema';
+import { useSyncStore } from './syncStore';
 import type {
   ExamTemplate,
   Station,
@@ -8,6 +9,7 @@ import type {
   Evaluation,
   ExamSession,
   ItemScore,
+  IdentificationMethod,
 } from '../types';
 
 interface ExamState {
@@ -39,7 +41,9 @@ interface ExamState {
   // Actions - Evaluation
   startEvaluation: (
     candidateId: string,
-    station: Station
+    station: Station,
+    identifiedBy: IdentificationMethod,
+    scoredOutsideCircuit?: boolean
   ) => void;
   updateScore: (itemId: string, score: number) => void;
   setGlobalRating: (rating: number) => void;
@@ -162,7 +166,7 @@ export const useExamStore = create<ExamState>((set, get) => ({
   },
 
   // Start evaluating a candidate
-  startEvaluation: (candidateId, station) => {
+  startEvaluation: (candidateId, station, identifiedBy, scoredOutsideCircuit) => {
     const { currentSession } = get();
     if (!currentSession) return;
 
@@ -184,6 +188,8 @@ export const useExamStore = create<ExamState>((set, get) => ({
       candidateId,
       stationId: station.id,
       examinerName: currentSession.examinerName,
+      identifiedBy,
+      scoredOutsideCircuit: scoredOutsideCircuit || undefined,
       scores,
       notes: '',
       startTime: new Date(),
@@ -258,6 +264,11 @@ export const useExamStore = create<ExamState>((set, get) => ({
 
     await db.evaluations.add(finalEvaluation);
     set({ currentEvaluation: null });
+
+    // Get a second copy off this device as soon as possible, without making
+    // the examiner wait for it. Not awaited: the mark is already durable in
+    // IndexedDB, and the next candidate should not be held up by the network.
+    useSyncStore.getState().syncInBackground();
   },
 
   // Clear current evaluation without saving

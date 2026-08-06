@@ -3,17 +3,31 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useExamStore } from '../stores/examStore';
 import { useCandidateStore } from '../stores/candidateStore';
-import type { ChecklistItem } from '../types';
-import { GLOBAL_RATING_LABELS } from '../types';
+import { useCheckInStore } from '../stores/checkInStore';
+import { useSyncStore } from '../stores/syncStore';
+import type { ChecklistItem, Candidate, IdentificationMethod } from '../types';
+import { GLOBAL_RATING_LABELS, IDENTIFICATION_METHOD_LABELS } from '../types';
+import { validateQR, findCandidateByNumber } from '../utils/qrUtils';
+import { downloadBackup } from '../services/backupExporter';
+
+/** Where a student sits relative to the circuit this station belongs to. */
+type CircuitStatus =
+  | { kind: 'not-in-use' }       // this exam has no check-ins; nothing to check
+  | { kind: 'this-circuit' }
+  | { kind: 'other-circuit'; circuitNumber?: number }
+  | { kind: 'not-checked-in' };
 
 // Lazy load QR scanner to reduce initial bundle size
 const QRScanner = lazy(() => import('../components/scanner/QRScanner'));
+const ManualRegistrationModal = lazy(() => import('../components/ManualRegistrationModal'));
 
 export default function ActiveExam() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const {
     exams,
+    circuits,
+    loadCircuits,
     currentSession,
     currentEvaluation,
     loadExams,
@@ -25,6 +39,8 @@ export default function ActiveExam() {
     endSession,
   } = useExamStore();
   const { candidates, loadCandidates } = useCandidateStore();
+  const { checkIns, loadAllCheckInsForExam } = useCheckInStore();
+  const { isOnline, pendingCount } = useSyncStore();
 
   const [timeRemaining, setTimeRemaining] = useState(0);
   const [selectedCandidateId, setSelectedCandidateId] = useState('');
@@ -33,6 +49,13 @@ export default function ActiveExam() {
   const [showQRScanner, setShowQRScanner] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [scanError, setScanError] = useState<string | null>(null);
+  const [sawLegacyBadge, setSawLegacyBadge] = useState(false);
+  const [pendingCandidate, setPendingCandidate] = useState<{
+    candidate: Candidate;
+    method: IdentificationMethod;
+  } | null>(null);
+  const [showManualEntry, setShowManualEntry] = useState(false);
+  const [showAllCandidates, setShowAllCandidates] = useState(false);
 
   // Load data on mount
   useEffect(() => {
@@ -40,15 +63,54 @@ export default function ActiveExam() {
     loadCandidates();
   }, [loadExams, loadCandidates]);
 
+  // Circuits are needed to show which circuit this station belongs to, and
+  // check-ins to know which students belong to it.
+  useEffect(() => {
+    if (!currentSession?.examId) return;
+    loadCircuits(currentSession.examId);
+    loadAllCheckInsForExam(currentSession.examId);
+  }, [currentSession?.examId, loadCircuits, loadAllCheckInsForExam]);
+
   // Get current exam and station
   const currentExam = exams.find((e) => e.id === currentSession?.examId);
   const currentStation = currentExam?.stations.find((s) => s.id === currentSession?.stationId);
+  const currentCircuit = circuits.find((c) => c.id === currentSession?.circuitId);
+
+  // Circuit membership
+  // ------------------
+  // Check-in is optional, so this only constrains anything when the exam
+  // actually uses it. An exam with no check-ins at all behaves exactly as it
+  // did before — there is nothing to check against, and refusing to score
+  // would break every exam that skips the morning check-in step.
+  const examUsesCheckIn = checkIns.length > 0;
+
+  const circuitStatusFor = useCallback(
+    (candidate: Candidate): CircuitStatus => {
+      if (checkIns.length === 0) return { kind: 'not-in-use' };
+
+      const record = checkIns.find((c) => c.candidateId === candidate.id);
+      if (!record) return { kind: 'not-checked-in' };
+      if (record.circuitId === currentSession?.circuitId) return { kind: 'this-circuit' };
+
+      const circuit = circuits.find((c) => c.id === record.circuitId);
+      return { kind: 'other-circuit', circuitNumber: circuit?.circuitNumber };
+    },
+    [checkIns, circuits, currentSession?.circuitId]
+  );
 
   // Timer effect
-  useEffect(() => {
-    if (!currentStation || !currentEvaluation) return;
+  //
+  // Keyed on the evaluation's id rather than the evaluation object: scoring an
+  // item replaces that object, so depending on it would restart the countdown
+  // every time the examiner tapped a score. Both values are pulled out first
+  // so the dependency list can say exactly what it means.
+  const stationTimeLimit = currentStation?.timeLimit;
+  const evaluationId = currentEvaluation?.id;
 
-    setTimeRemaining(currentStation.timeLimit);
+  useEffect(() => {
+    if (stationTimeLimit === undefined || !evaluationId) return;
+
+    setTimeRemaining(stationTimeLimit);
 
     const interval = setInterval(() => {
       setTimeRemaining((prev) => {
@@ -61,7 +123,7 @@ export default function ActiveExam() {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [currentStation, currentEvaluation?.id]);
+  }, [stationTimeLimit, evaluationId]);
 
   // Format time as MM:SS
   const formatTime = (seconds: number) => {
@@ -70,39 +132,91 @@ export default function ActiveExam() {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Handle candidate selection and start evaluation
-  const handleSelectCandidate = useCallback((candidateId: string) => {
-    if (!currentStation) return;
-    setSelectedCandidateId(candidateId);
-    startEvaluation(candidateId, currentStation);
+  // Every route to a candidate — scanning, typing a college ID, picking off
+  // the roster — ends here rather than starting an evaluation directly. The
+  // examiner confirms against the person actually standing in front of them,
+  // which is what stops a mistyped digit becoming a misattributed score.
+  const proposeCandidate = useCallback((candidate: Candidate, method: IdentificationMethod) => {
+    setPendingCandidate({ candidate, method });
+    setScanError(null);
+  }, []);
+
+  const confirmCandidate = useCallback(() => {
+    if (!pendingCandidate || !currentStation) return;
+    const { candidate, method } = pendingCandidate;
+
+    // Record when the examiner overrode a circuit warning, so these marks can
+    // be reviewed later rather than disappearing into the results.
+    const status = circuitStatusFor(candidate);
+    const outsideCircuit = status.kind === 'other-circuit' || status.kind === 'not-checked-in';
+
+    setSelectedCandidateId(candidate.id);
+    startEvaluation(candidate.id, currentStation, method, outsideCircuit);
+    setPendingCandidate(null);
     setShowCandidateSelector(false);
     setSearchQuery('');
     setScanError(null);
-  }, [currentStation, startEvaluation]);
+  }, [pendingCandidate, currentStation, startEvaluation, circuitStatusFor]);
 
-  // Handle QR code scan result
+  // Typing a full college ID resolves straight to one student; anything else
+  // falls through to filtering the roster by name.
+  const handleSearchSubmit = useCallback(() => {
+    const query = searchQuery.trim();
+    if (!query) return;
+    const match = findCandidateByNumber(candidates, query);
+    if (match) proposeCandidate(match, 'typed-id');
+  }, [searchQuery, candidates, proposeCandidate]);
+
+  // Handle QR code scan result.
+  //
+  // Matching is exact. It used to be a two-way `includes()`, which meant
+  // scanning badge 20240012 would resolve to candidate 2024001 and file the
+  // score against the wrong person.
   const handleQRScan = useCallback((scannedText: string) => {
     setShowQRScanner(false);
     setScanError(null);
 
-    // Try to find candidate by candidate number (exact match or contains)
-    const candidate = candidates.find(
-      (c) => c.candidateNumber === scannedText ||
-             c.candidateNumber.includes(scannedText) ||
-             scannedText.includes(c.candidateNumber)
-    );
+    const result = validateQR(scannedText, currentSession?.examId ?? '');
 
-    if (candidate) {
-      handleSelectCandidate(candidate.id);
-    } else {
-      // Show error and keep selector open
-      setScanError(`Candidate not found for code: "${scannedText}". Please select manually.`);
+    if (result.status === 'unreadable') {
+      setScanError(`Could not read that badge ("${scannedText}"). Select the candidate from the list instead.`);
       setSearchQuery(scannedText);
+      return;
     }
-  }, [candidates, handleSelectCandidate]);
+
+    // A badge printed for another exam must not be scored against this one.
+    if (result.status === 'wrong-exam') {
+      const otherExam = exams.find((e) => e.id === result.data.examId);
+      setScanError(
+        `This badge is for ${otherExam ? `"${otherExam.name}"` : 'a different exam'}, not "${currentExam?.name ?? 'this exam'}". Check the candidate is at the right station.`
+      );
+      return;
+    }
+
+    const candidate = findCandidateByNumber(candidates, result.data.candidateNumber);
+
+    if (!candidate) {
+      setScanError(`No candidate with number ${result.data.candidateNumber}. Select from the list instead.`);
+      setSearchQuery(result.data.candidateNumber);
+      return;
+    }
+
+    // Old-format badges carry no exam, so they can't be checked against this
+    // one. They still work — the examiner just gets told to reprint.
+    if (result.status === 'legacy') {
+      setSawLegacyBadge(true);
+    }
+
+    proposeCandidate(candidate, 'scanned');
+  }, [candidates, exams, currentSession?.examId, currentExam?.name, proposeCandidate]);
+
+  // Candidates checked into this circuit, when that is knowable
+  const circuitCandidates = examUsesCheckIn && !showAllCandidates
+    ? candidates.filter((c) => circuitStatusFor(c).kind === 'this-circuit')
+    : candidates;
 
   // Filter candidates based on search query
-  const filteredCandidates = candidates.filter((c) => {
+  const filteredCandidates = circuitCandidates.filter((c) => {
     if (!searchQuery) return true;
     const query = searchQuery.toLowerCase();
     return (
@@ -141,11 +255,31 @@ export default function ActiveExam() {
   };
 
   // Handle end session
+  //
+  // Offer the backup here rather than only in Settings: this is the moment the
+  // examiner is finished, their marks are complete, and those marks exist in
+  // exactly one place — this tablet.
   const handleEndSession = async () => {
-    if (confirm('End this exam session?')) {
-      await endSession();
-      navigate('/');
+    if (!confirm(t('session.endConfirm', 'End this exam session?'))) return;
+
+    await endSession();
+
+    if (
+      confirm(
+        t(
+          'session.backupPrompt',
+          'Session ended.\n\nThese marks are only on this tablet until it is synced. Download a backup file now?'
+        )
+      )
+    ) {
+      try {
+        await downloadBackup();
+      } catch (error) {
+        console.error('Backup failed:', error);
+      }
     }
+
+    navigate('/');
   };
 
   // No active session
@@ -204,7 +338,7 @@ export default function ActiveExam() {
           <div className="flex items-center justify-between">
             <div>
               <div className="text-sm text-gray-500">
-                Circuit {currentSession.circuitId?.slice(-1) || '1'} | Station {currentStation.stationNumber}
+                Circuit {currentCircuit?.circuitNumber ?? '—'} | Station {currentStation.stationNumber}
               </div>
               <div className="font-semibold text-gray-900">{currentStation.name}</div>
             </div>
@@ -219,12 +353,45 @@ export default function ActiveExam() {
               </div>
             )}
 
-            <button
-              onClick={handleEndSession}
-              className="text-gray-500 hover:text-gray-700 text-sm"
-            >
-              {t('session.endSession')}
-            </button>
+            <div className="flex items-center gap-3">
+              {/* The main nav is hidden on this screen, so the only place an
+                  invigilator can see whether marks have left this tablet is
+                  here — where the marks are actually being made. */}
+              <span
+                className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${
+                  pendingCount > 0
+                    ? 'bg-orange-100 text-orange-800'
+                    : isOnline
+                    ? 'bg-green-100 text-green-700'
+                    : 'bg-gray-100 text-gray-600'
+                }`}
+                title={
+                  pendingCount > 0
+                    ? t('exam.pendingTitle', '{{count}} mark(s) not yet sent from this device', {
+                        count: pendingCount,
+                      })
+                    : t('sync.synced', 'Synced')
+                }
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    pendingCount > 0 ? 'bg-orange-500' : isOnline ? 'bg-green-500' : 'bg-gray-400'
+                  }`}
+                />
+                {pendingCount > 0
+                  ? t('exam.pendingCount', '{{count}} unsent', { count: pendingCount })
+                  : isOnline
+                  ? t('sync.online')
+                  : t('sync.offline')}
+              </span>
+
+              <button
+                onClick={handleEndSession}
+                className="text-gray-500 hover:text-gray-700 text-sm"
+              >
+                {t('session.endSession')}
+              </button>
+            </div>
           </div>
 
           {/* Candidate Info */}
@@ -244,7 +411,96 @@ export default function ActiveExam() {
       </div>
 
       {/* Candidate Selector Modal */}
-      {showCandidateSelector && (
+      {showCandidateSelector && pendingCandidate && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md flex flex-col">
+            <div className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-1">
+              {t('exam.confirmHeading', 'Confirm the student')}
+            </div>
+            <p className="text-gray-600 text-sm mb-5">
+              {t('exam.confirmPrompt', 'Check this matches the person in front of you before scoring.')}
+            </p>
+
+            <div className="rounded-xl border-2 border-blue-200 bg-blue-50 p-4 mb-4 text-center">
+              <div className="text-2xl font-bold text-gray-900 leading-tight" dir="auto">
+                {pendingCandidate.candidate.name}
+              </div>
+              {pendingCandidate.candidate.nameAr &&
+                pendingCandidate.candidate.nameAr !== pendingCandidate.candidate.name && (
+                  <div className="text-lg text-gray-700 mt-1" dir="rtl">
+                    {pendingCandidate.candidate.nameAr}
+                  </div>
+                )}
+              <div className="mt-3 font-mono text-xl font-bold text-blue-800">
+                {pendingCandidate.candidate.candidateNumber}
+              </div>
+              <div className="mt-1 text-sm text-gray-600">
+                {[pendingCandidate.candidate.group && `Group ${pendingCandidate.candidate.group}`,
+                  pendingCandidate.candidate.stage].filter(Boolean).join(' · ')}
+              </div>
+            </div>
+
+            <div className="text-xs text-gray-500 text-center mb-4">
+              {IDENTIFICATION_METHOD_LABELS[pendingCandidate.method]}
+            </div>
+
+            {/* Circuit check. Only ever shown when the exam actually uses
+                check-in, and never blocking — the examiner can override, and
+                the override is recorded on the evaluation. */}
+            {(() => {
+              const status = circuitStatusFor(pendingCandidate.candidate);
+              if (status.kind === 'not-in-use' || status.kind === 'this-circuit') return null;
+
+              return (
+                <div className="mb-4 p-3 rounded-xl bg-red-50 border-2 border-red-300 text-red-800 text-sm">
+                  <div className="font-semibold mb-1">
+                    {status.kind === 'other-circuit'
+                      ? t('exam.wrongCircuitTitle', 'Wrong circuit')
+                      : t('exam.notCheckedInTitle', 'Not checked in')}
+                  </div>
+                  {status.kind === 'other-circuit'
+                    ? t('exam.wrongCircuitBody', {
+                        defaultValue:
+                          'This student is checked into Circuit {{theirs}}, but this station is in Circuit {{ours}}.',
+                        theirs: status.circuitNumber ?? '?',
+                        ours: currentCircuit?.circuitNumber ?? '?',
+                      })
+                    : t('exam.notCheckedInBody', 'This student has not checked in for this exam.')}
+                </div>
+              );
+            })()}
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setPendingCandidate(null)}
+                className="flex-1 py-3 border border-gray-300 text-gray-700 rounded-xl font-medium hover:bg-gray-50 transition-colors"
+              >
+                {t('exam.notThisStudent', 'Not this student')}
+              </button>
+              {(() => {
+                const status = circuitStatusFor(pendingCandidate.candidate);
+                const flagged = status.kind === 'other-circuit' || status.kind === 'not-checked-in';
+                return (
+                  <button
+                    onClick={confirmCandidate}
+                    className={`flex-1 py-3 rounded-xl font-semibold text-white transition-colors ${
+                      flagged
+                        ? 'bg-red-600 hover:bg-red-700'
+                        : 'bg-blue-600 hover:bg-blue-700'
+                    }`}
+                  >
+                    {flagged
+                      ? t('exam.scoreAnyway', 'Score anyway')
+                      : t('exam.startEvaluation', 'Start scoring')}
+                  </button>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCandidateSelector && !pendingCandidate && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl p-6 w-full max-w-md max-h-[80vh] overflow-hidden flex flex-col">
             <h2 className="text-xl font-bold mb-4">{t('exam.selectCandidate')}</h2>
@@ -260,21 +516,61 @@ export default function ActiveExam() {
 
             {/* Scan Error */}
             {scanError && (
-              <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-sm">
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
                 {scanError}
               </div>
             )}
 
-            {/* Search Box */}
-            <div className="mb-4">
+            {/* Old-format badges can't be checked against this exam */}
+            {sawLegacyBadge && (
+              <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-sm">
+                These badges were printed in the old format and carry no exam. They
+                still scan, but a badge from another exam would not be caught.
+                Reprint from Settings before the next exam.
+              </div>
+            )}
+
+            {/* College ID or name. A full ID resolves to one student; anything
+                else filters the roster below. */}
+            <div className="mb-4 flex gap-2">
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search by name or number..."
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                onKeyDown={(e) => e.key === 'Enter' && handleSearchSubmit()}
+                placeholder={t('exam.findPlaceholder', 'College ID, or search by name')}
+                className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
+              <button
+                onClick={handleSearchSubmit}
+                disabled={!searchQuery.trim()}
+                className="px-4 py-2 bg-gray-800 hover:bg-gray-900 disabled:bg-gray-300 text-white rounded-lg font-medium transition-colors"
+              >
+                {t('common.find', 'Find')}
+              </button>
             </div>
+
+            {/* When the exam uses check-in, show this circuit's students by
+                default — the ones who should actually be at this station. */}
+            {examUsesCheckIn && (
+              <div className="mb-3 flex items-center justify-between text-sm">
+                <span className="text-gray-600">
+                  {showAllCandidates
+                    ? t('exam.showingAll', 'Showing all candidates')
+                    : t('exam.showingCircuit', 'Circuit {{n}} only', {
+                        n: currentCircuit?.circuitNumber ?? '?',
+                      })}
+                </span>
+                <button
+                  onClick={() => setShowAllCandidates((v) => !v)}
+                  className="text-blue-600 hover:text-blue-700 font-medium"
+                >
+                  {showAllCandidates
+                    ? t('exam.showCircuitOnly', 'Show this circuit only')
+                    : t('exam.showAll', 'Show all')}
+                </button>
+              </div>
+            )}
 
             <div className="flex-1 overflow-y-auto">
               {candidates.length === 0 ? (
@@ -283,14 +579,16 @@ export default function ActiveExam() {
                 </p>
               ) : filteredCandidates.length === 0 ? (
                 <p className="text-gray-500 text-center py-4">
-                  No candidates match "{searchQuery}"
+                  {searchQuery
+                    ? `No candidates match "${searchQuery}"`
+                    : t('exam.noneInCircuit', 'Nobody has checked in to this circuit yet.')}
                 </p>
               ) : (
                 <div className="space-y-2">
                   {filteredCandidates.map((candidate) => (
                     <button
                       key={candidate.id}
-                      onClick={() => handleSelectCandidate(candidate.id)}
+                      onClick={() => proposeCandidate(candidate, 'list')}
                       className="w-full text-left p-3 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors"
                     >
                       <div className="font-medium">{candidate.name}</div>
@@ -304,6 +602,20 @@ export default function ActiveExam() {
               )}
             </div>
 
+            {/* Late registration. A real student in front of an examiner has
+                to be scoreable, roster or no roster. */}
+            <div className="mt-4 pt-4 border-t border-gray-200">
+              <p className="text-sm text-gray-500 mb-2">
+                {t('exam.notOnRoster', 'Student not on the list?')}
+              </p>
+              <button
+                onClick={() => setShowManualEntry(true)}
+                className="w-full py-3 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+              >
+                {t('exam.registerHere', 'Register them at this station')}
+              </button>
+            </div>
+
             <button
               onClick={() => navigate('/session/setup')}
               className="mt-4 text-gray-500 hover:text-gray-700"
@@ -312,6 +624,25 @@ export default function ActiveExam() {
             </button>
           </div>
         </div>
+      )}
+
+      {/* Late registration — lands on the same confirmation panel as every
+          other route to a candidate. */}
+      {showManualEntry && (
+        <Suspense fallback={null}>
+          <ManualRegistrationModal
+            registeredWhere="station"
+            registeredBy={currentSession.examinerName}
+            onCancel={() => setShowManualEntry(false)}
+            onRegistered={(candidate) => {
+              setShowManualEntry(false);
+              proposeCandidate(
+                candidate,
+                candidate.provisional ? 'manual-entry' : 'list'
+              );
+            }}
+          />
+        </Suspense>
       )}
 
       {/* QR Scanner Modal */}
