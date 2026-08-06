@@ -1,28 +1,95 @@
 rules_version = '2';
+
+// OSCE Exam App — Firestore security rules
+//
+// These replace a ruleset that granted `allow read, write: if true` on every
+// collection plus a catch-all. That made every student's name, candidate
+// number and mark readable and writable by anyone who knew the project id —
+// and the project id ships inside the app's JavaScript, so effectively by
+// anyone who opened the deployed site.
+//
+// WHAT THIS DOES AND DOES NOT GIVE YOU
+//
+// The app has no user accounts, so there is nothing to authenticate as. Every
+// device signs in anonymously instead, which lets these rules demand that a
+// request carry *some* identity. That closes the door on casual access — you
+// can no longer read the database with a plain HTTP request — but anyone can
+// obtain an anonymous session of their own. Turn on App Check as well, which
+// requires requests to come from your app rather than from a script.
+//
+// Real access control, where an examiner can only see their own institution's
+// exams, needs real accounts. That is Phase 1 of the commercial plan.
+//
+// DEPLOY IN THIS ORDER, or sync will break:
+//   1. Firebase console → Authentication → Sign-in method → enable Anonymous
+//   2. Deploy the app build that signs in anonymously
+//   3. Deploy these rules
+//
+// Deploy with:  firebase deploy --only firestore:rules
+// Or paste into: Firebase console → Firestore Database → Rules
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    // OSCE App Collections
-    // Note: These rules are permissive for initial deployment
-    // TODO: Add authentication and restrict access per organization
 
-    // Evaluations - exam results
-    match /evaluations/{evaluationId} {
-      allow read, write: if true;
+    function signedIn() {
+      return request.auth != null;
     }
 
-    // Exams - exam templates
+    // The fields a mark must carry to be worth storing at all.
+    function validEvaluation() {
+      let d = request.resource.data;
+      return d.keys().hasAll(['id', 'examId', 'candidateId', 'stationId', 'examinerName'])
+        && d.examId is string && d.examId.size() > 0
+        && d.candidateId is string && d.candidateId.size() > 0
+        && d.stationId is string && d.stationId.size() > 0
+        && d.totalScore is number
+        && d.maxPossibleScore is number;
+    }
+
+    // A re-sync may stamp the sync fields again. Nothing else about a
+    // recorded mark may change after the fact.
+    function onlySyncFieldsChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['synced', 'syncedAt']);
+    }
+
+    // Exam templates — stations, checklists, scoring. Not deletable from a
+    // device: losing an exam template orphans every mark that references it.
     match /exams/{examId} {
-      allow read, write: if true;
+      allow read: if signedIn();
+      allow create, update: if signedIn();
+      allow delete: if false;
     }
 
-    // Candidates - student information
+    // Candidate roster. Personal data, so reads require a session.
     match /candidates/{candidateId} {
-      allow read, write: if true;
+      allow read: if signedIn();
+      allow create, update: if signedIn();
+      allow delete: if false;
     }
 
-    // Catch-all for any other collections
+    // Circuit assignments made at check-in.
+    match /checkIns/{checkInId} {
+      allow read: if signedIn();
+      allow create, update: if signedIn();
+      allow delete: if signedIn();
+    }
+
+    // Exam results. Write-once: a mark can be created and can have its sync
+    // status stamped, but the scores themselves cannot be rewritten later and
+    // cannot be deleted. A grade appeal should find the same numbers the
+    // examiner entered.
+    match /evaluations/{evaluationId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && validEvaluation();
+      allow update: if signedIn() && onlySyncFieldsChanged();
+      allow delete: if false;
+    }
+
+    // Anything not named above is denied. The previous ruleset had a
+    // catch-all that allowed everything instead.
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }

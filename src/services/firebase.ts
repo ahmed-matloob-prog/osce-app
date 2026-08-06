@@ -4,6 +4,7 @@ import {
   enableIndexedDbPersistence,
   type Firestore,
 } from 'firebase/firestore';
+import { getAuth, signInAnonymously, type Auth } from 'firebase/auth';
 
 // Firebase configuration
 // Replace these values with your Firebase project config
@@ -18,11 +19,21 @@ const firebaseConfig = {
 
 let app: FirebaseApp | null = null;
 let firestore: Firestore | null = null;
+let auth: Auth | null = null;
+
+/**
+ * The project id used by .env.test. A build carrying it must never reach the
+ * network — that file exists so browser-driven tests and local demos cannot
+ * write into the real project, which is exactly what happens if you build
+ * with the live .env and then drive the result.
+ */
+const TEST_PROJECT_ID = 'test-project';
 
 /**
  * Check if Firebase is configured
  */
 export function isFirebaseConfigured(): boolean {
+  if (firebaseConfig.projectId === TEST_PROJECT_ID) return false;
   return Boolean(firebaseConfig.projectId && firebaseConfig.apiKey);
 }
 
@@ -70,6 +81,9 @@ export async function initializeFirebase(): Promise<{
       }
     }
 
+    auth = getAuth(app);
+    await ensureSignedIn();
+
     console.log('Firebase initialized successfully');
     return { app, firestore };
   } catch (error) {
@@ -79,10 +93,52 @@ export async function initializeFirebase(): Promise<{
 }
 
 /**
+ * Sign this device in anonymously.
+ *
+ * The app has no user accounts, so there is nothing to log in with — but the
+ * security rules need *something* to distinguish a request made by the app
+ * from an arbitrary request made against the project. An anonymous session
+ * gives every device a uid and lets the rules require `request.auth != null`.
+ *
+ * This is a bar, not a wall: anyone can obtain an anonymous session too. It
+ * stops casual access to a wide-open database, and it is what makes the
+ * hardened rules deployable at all. Real access control needs real accounts.
+ *
+ * Deliberately tolerant of failure. If Anonymous sign-in has not been enabled
+ * in the Firebase console yet, this logs and carries on rather than taking
+ * sync down with it — so the app keeps working both before and after the
+ * console setting is turned on.
+ */
+export async function ensureSignedIn(): Promise<boolean> {
+  if (!auth) return false;
+  if (auth.currentUser) return true;
+
+  try {
+    await signInAnonymously(auth);
+    return true;
+  } catch (error) {
+    console.warn(
+      'Anonymous sign-in failed. Enable Authentication → Sign-in method → ' +
+        'Anonymous in the Firebase console. Sync will still work while the ' +
+        'permissive rules are in place.',
+      error
+    );
+    return false;
+  }
+}
+
+/**
  * Get Firestore instance
  */
 export function getFirestoreInstance(): Firestore | null {
   return firestore;
+}
+
+/**
+ * Get the current anonymous user id, if signed in
+ */
+export function getCurrentUid(): string | null {
+  return auth?.currentUser?.uid ?? null;
 }
 
 /**
