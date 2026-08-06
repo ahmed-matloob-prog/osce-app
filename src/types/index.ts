@@ -68,6 +68,9 @@ export interface ExamTemplate {
 }
 
 // Candidate
+//
+// `candidateNumber` is the college ID. It is the student's real identity —
+// unique, externally assigned, printed on the badge, and encoded in the QR.
 export interface Candidate {
   id: string;
   name: string;
@@ -77,6 +80,18 @@ export interface Candidate {
   group?: string;
   stage?: string;
   semester?: string;
+
+  // Late registration
+  // -----------------
+  // Set when a student was added on exam day because they were not on the
+  // imported roster. They score exactly like anyone else; the flag exists so
+  // an admin can check the typed college ID against the college's records
+  // before results are published, since a station is a poor place to type a
+  // long number accurately.
+  provisional?: boolean;
+  registeredAt?: Date;
+  registeredBy?: string;
+  registeredWhere?: 'station' | 'check-in';
 }
 
 // Circuit examiner assignment
@@ -97,6 +112,40 @@ export interface Circuit {
   candidateIds: string[];
 }
 
+// Check-in record for circuit assignment
+export interface CheckIn {
+  id: string;
+  examId: string;
+  circuitId: string;
+  candidateId: string;
+  candidateNumber: string;
+  candidateName: string;
+  checkedInAt: Date;
+  checkedInBy: string;        // Device ID or examiner name
+  stationsCompleted: string[]; // Station IDs that have been completed
+  synced: boolean;
+  syncedAt?: Date;
+}
+
+// How the examiner established who they were scoring.
+//
+// Recorded on every evaluation for two reasons: if a mark is ever disputed,
+// "scanned" versus "typed by the examiner" is the evidence that settles it;
+// and the proportion of manual entries tells you whether the badges are
+// actually working in the hall.
+export type IdentificationMethod =
+  | 'scanned'       // QR badge read by the camera
+  | 'typed-id'      // college ID typed in, badge unreadable or missing
+  | 'list'          // picked from the roster after a name search
+  | 'manual-entry'; // registered on the spot, not on the roster
+
+export const IDENTIFICATION_METHOD_LABELS: Record<IdentificationMethod, string> = {
+  'scanned': 'Scanned badge',
+  'typed-id': 'College ID typed in',
+  'list': 'Chosen from the roster',
+  'manual-entry': 'Registered at the station',
+};
+
 // Individual score in an evaluation
 export interface ItemScore {
   itemId: string;
@@ -111,6 +160,15 @@ export interface Evaluation {
   candidateId: string;
   stationId: string;
   examinerName: string;
+  /** Optional so evaluations recorded before this was tracked still load. */
+  identifiedBy?: IdentificationMethod;
+  /**
+   * Set when the examiner scored a student who was not checked into this
+   * circuit — either checked in elsewhere, or not checked in at all. The
+   * examiner is warned and can override; this is the trace it leaves, so an
+   * admin can review those marks rather than never learning of them.
+   */
+  scoredOutsideCircuit?: boolean;
   scores: ItemScore[];
   globalRating?: number; // 0-4
   notes: string;

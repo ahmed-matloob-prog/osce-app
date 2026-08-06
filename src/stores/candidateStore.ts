@@ -1,7 +1,30 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
-import { db, getCandidateByNumber } from '../db/schema';
+import { db, getCandidateByNumber, normalizeCandidateNumber } from '../db/schema';
 import type { Candidate } from '../types';
+
+export interface ImportResult {
+  added: number;
+  /** College IDs that were already on the roster, or missing from the row. */
+  skipped: string[];
+}
+
+export interface ProvisionalInput {
+  candidateNumber: string;
+  name: string;
+  nameAr?: string;
+  group?: string;
+  registeredBy: string;
+  registeredWhere: 'station' | 'check-in';
+}
+
+/**
+ * Either a new provisional record, or the student who already holds that
+ * college ID — so the UI can offer them instead of creating a second record.
+ */
+export type ProvisionalResult =
+  | { status: 'created'; candidate: Candidate }
+  | { status: 'already-exists'; candidate: Candidate };
 
 interface CandidateState {
   candidates: Candidate[];
@@ -12,7 +35,9 @@ interface CandidateState {
   addCandidate: (candidate: Omit<Candidate, 'id'>) => Promise<Candidate>;
   updateCandidate: (id: string, updates: Partial<Candidate>) => Promise<void>;
   deleteCandidate: (id: string) => Promise<void>;
-  importCandidates: (candidates: Omit<Candidate, 'id'>[]) => Promise<number>;
+  importCandidates: (candidates: Omit<Candidate, 'id'>[]) => Promise<ImportResult>;
+  registerProvisional: (input: ProvisionalInput) => Promise<ProvisionalResult>;
+  confirmProvisional: (id: string) => Promise<void>;
   findByNumber: (candidateNumber: string) => Promise<Candidate | undefined>;
   clearAll: () => Promise<void>;
 }
@@ -37,8 +62,11 @@ export const useCandidateStore = create<CandidateState>((set) => ({
   addCandidate: async (candidateData) => {
     const candidate: Candidate = {
       ...candidateData,
+      candidateNumber: normalizeCandidateNumber(candidateData.candidateNumber),
       id: uuidv4(),
     };
+    // The unique index on candidateNumber makes this throw on a collision
+    // rather than quietly creating a second record for the same student.
     await db.candidates.add(candidate);
     set((state) => ({ candidates: [...state.candidates, candidate] }));
     return candidate;
@@ -63,18 +91,82 @@ export const useCandidateStore = create<CandidateState>((set) => ({
   },
 
   // Import multiple candidates (from CSV)
+  // Import policy: add students who are new, skip ones already on the roster,
+  // and report exactly what was skipped.
+  //
+  // Skipping rather than overwriting is the non-destructive choice — an import
+  // must never silently replace a record that was corrected inside the app,
+  // and re-running the same file must be harmless. The trade-off is that
+  // corrections in a re-exported roster are not picked up; those have to be
+  // edited directly. A "47 of 47 skipped" report is also how you notice you
+  // just loaded last year's list.
   importCandidates: async (candidatesData) => {
-    const newCandidates: Candidate[] = candidatesData.map((c) => ({
-      ...c,
+    const existing = await db.candidates.toArray();
+    const seen = new Set(existing.map((c) => normalizeCandidateNumber(c.candidateNumber)));
+
+    const toAdd: Candidate[] = [];
+    const skipped: string[] = [];
+
+    for (const data of candidatesData) {
+      const candidateNumber = normalizeCandidateNumber(data.candidateNumber);
+
+      // `seen` grows as we go, so duplicates inside the file itself are
+      // caught too, not just collisions with the existing roster.
+      if (!candidateNumber || seen.has(candidateNumber)) {
+        skipped.push(data.candidateNumber || '(no college ID)');
+        continue;
+      }
+
+      seen.add(candidateNumber);
+      toAdd.push({ ...data, candidateNumber, id: uuidv4() });
+    }
+
+    if (toAdd.length > 0) {
+      await db.candidates.bulkAdd(toAdd);
+      set((state) => ({ candidates: [...state.candidates, ...toAdd] }));
+    }
+
+    return { added: toAdd.length, skipped };
+  },
+
+  // Register a student who is not on the roster — late registration on exam
+  // day. Never blocks: the student is real and needs a mark. The record is
+  // flagged provisional so an admin verifies the typed college ID afterwards.
+  registerProvisional: async (input) => {
+    const candidateNumber = normalizeCandidateNumber(input.candidateNumber);
+
+    // If the ID is already taken, hand back that student rather than creating
+    // a second record for them — the unique index would reject it anyway.
+    const existing = await getCandidateByNumber(candidateNumber);
+    if (existing) {
+      return { status: 'already-exists', candidate: existing };
+    }
+
+    const candidate: Candidate = {
       id: uuidv4(),
-    }));
+      candidateNumber,
+      name: input.name.trim(),
+      nameAr: input.nameAr?.trim() || undefined,
+      group: input.group?.trim() || undefined,
+      provisional: true,
+      registeredAt: new Date(),
+      registeredBy: input.registeredBy,
+      registeredWhere: input.registeredWhere,
+    };
 
-    await db.candidates.bulkAdd(newCandidates);
+    await db.candidates.add(candidate);
+    set((state) => ({ candidates: [...state.candidates, candidate] }));
+    return { status: 'created', candidate };
+  },
+
+  // Admin has checked the college ID against the college's records
+  confirmProvisional: async (id) => {
+    await db.candidates.update(id, { provisional: false });
     set((state) => ({
-      candidates: [...state.candidates, ...newCandidates],
+      candidates: state.candidates.map((c) =>
+        c.id === id ? { ...c, provisional: false } : c
+      ),
     }));
-
-    return newCandidates.length;
   },
 
   // Find candidate by number (for QR scanning)

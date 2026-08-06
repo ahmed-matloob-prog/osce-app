@@ -6,7 +6,11 @@ import type {
   Evaluation,
   ExamSession,
   AppSettings,
+  CheckIn,
 } from '../types';
+import { normalizeCandidateNumber } from '../utils/qrUtils';
+
+export { normalizeCandidateNumber };
 
 // Database schema for OSCE App
 class OSCEDatabase extends Dexie {
@@ -16,12 +20,13 @@ class OSCEDatabase extends Dexie {
   circuits!: EntityTable<Circuit, 'id'>;
   evaluations!: EntityTable<Evaluation, 'id'>;
   examSessions!: EntityTable<ExamSession, 'id'>;
+  checkIns!: EntityTable<CheckIn, 'id'>;
   settings!: EntityTable<AppSettings & { id: string }, 'id'>;
 
   constructor() {
     super('OSCEDatabase');
 
-    this.version(1).stores({
+    this.version(2).stores({
       // ExamTemplate: indexed by id, searchable by name, filterable by lock status
       examTemplates: 'id, name, createdAt, updatedAt, isLocked, pinEnabled',
 
@@ -37,11 +42,86 @@ class OSCEDatabase extends Dexie {
       // ExamSession: active session tracking
       examSessions: 'id, examId, isActive',
 
+      // CheckIn: track student check-ins per circuit
+      checkIns: 'id, examId, circuitId, candidateId, candidateNumber, synced, checkedInAt',
+
       // Settings: single settings object
       settings: 'id',
     });
+
+    // Version 3
+    // -------------------------------------------------------------------
+    // Declares the compound indexes the query helpers below had always been
+    // asking for. Without them every `where('[examId+candidateId]')` call
+    // threw a SchemaError, which is why check-in could never store a row.
+    //
+    // Also normalises candidate numbers and collapses duplicates, so that
+    // version 4 can safely make the number unique.
+    this.version(3)
+      .stores({
+        evaluations:
+          'id, examId, circuitId, candidateId, stationId, synced, startTime, [examId+circuitId]',
+        checkIns:
+          'id, examId, circuitId, candidateId, candidateNumber, synced, checkedInAt, ' +
+          '[examId+circuitId], [examId+candidateId], [examId+candidateNumber]',
+      })
+      .upgrade(async (tx) => {
+        const candidates = await tx.table('candidates').toArray();
+
+        const survivorByNumber = new Map<string, Candidate>();
+        const remap = new Map<string, string>(); // duplicate id -> surviving id
+
+        for (const candidate of candidates) {
+          // A candidate with no number cannot take part in a unique index and
+          // must not be merged with another numberless student, so give it a
+          // placeholder the admin can spot and correct.
+          const number =
+            normalizeCandidateNumber(candidate.candidateNumber) ||
+            `UNKNOWN-${candidate.id.slice(0, 8)}`;
+
+          const survivor = survivorByNumber.get(number);
+          if (!survivor) {
+            survivorByNumber.set(number, candidate);
+            if (number !== candidate.candidateNumber) {
+              await tx.table('candidates').update(candidate.id, { candidateNumber: number });
+            }
+            continue;
+          }
+          remap.set(candidate.id, survivor.id);
+        }
+
+        if (remap.size === 0) return;
+
+        // Evaluations and check-ins point at candidates by id. Deleting a
+        // duplicate without repointing them would orphan real exam results.
+        for (const tableName of ['evaluations', 'checkIns'] as const) {
+          const rows = await tx.table(tableName).toArray();
+          for (const row of rows) {
+            const survivingId = remap.get(row.candidateId);
+            if (survivingId) {
+              await tx.table(tableName).update(row.id, { candidateId: survivingId });
+            }
+          }
+        }
+
+        await tx.table('candidates').bulkDelete([...remap.keys()]);
+        console.warn(
+          `[db] merged ${remap.size} duplicate candidate record(s) by candidate number`
+        );
+      });
+
+    // Version 4
+    // -------------------------------------------------------------------
+    // The candidate number is the college ID: externally assigned, unique by
+    // institutional policy, and the thing printed on the badge. Enforce it
+    // here so no import, manual entry or sync can introduce a collision.
+    // Split from version 3 so the de-duplication above has already run.
+    this.version(4).stores({
+      candidates: 'id, &candidateNumber, name, group, stage',
+    });
   }
 }
+
 
 // Create database instance
 export const db = new OSCEDatabase();
@@ -49,8 +129,14 @@ export const db = new OSCEDatabase();
 // Helper functions for common operations
 
 // Get all unsynced evaluations
+//
+// Filtered in memory rather than by index on purpose. IndexedDB has no boolean
+// key type, so a record with `synced: false` is left out of the `synced` index
+// entirely — the old `where('synced').equals(0)` matched nothing, ever, which
+// meant no evaluation was ever offered to the cloud and the pending count was
+// permanently zero.
 export async function getUnsyncedEvaluations(): Promise<Evaluation[]> {
-  return db.evaluations.where('synced').equals(0).toArray();
+  return db.evaluations.filter((evaluation) => !evaluation.synced).toArray();
 }
 
 // Mark evaluation as synced
@@ -58,9 +144,10 @@ export async function markEvaluationSynced(id: string): Promise<void> {
   await db.evaluations.update(id, { synced: true, syncedAt: new Date() });
 }
 
-// Get active exam session
+// Get active exam session (see the note on getUnsyncedEvaluations — booleans
+// are not indexable, so this has to be a scan)
 export async function getActiveSession(): Promise<ExamSession | undefined> {
-  return db.examSessions.where('isActive').equals(1).first();
+  return db.examSessions.filter((session) => session.isActive).first();
 }
 
 // Get evaluations for a specific exam and circuit
@@ -74,19 +161,22 @@ export async function getEvaluationsForCircuit(
     .toArray();
 }
 
-// Get candidate by QR code (candidate number)
+// Get candidate by QR code / college ID
 export async function getCandidateByNumber(
   candidateNumber: string
 ): Promise<Candidate | undefined> {
-  return db.candidates.where('candidateNumber').equals(candidateNumber).first();
+  return db.candidates
+    .where('candidateNumber')
+    .equals(normalizeCandidateNumber(candidateNumber))
+    .first();
 }
 
 // Get or create default settings
 export async function getSettings(): Promise<AppSettings> {
   const settings = await db.settings.get('default');
   if (settings) {
-    const { id, ...rest } = settings;
-    return rest;
+    const { language, autoSync, soundAlerts, timerWarningSeconds } = settings;
+    return { language, autoSync, soundAlerts, timerWarningSeconds };
   }
 
   // Default settings
@@ -116,13 +206,75 @@ export async function clearAllData(): Promise<void> {
     db.circuits,
     db.evaluations,
     db.examSessions,
+    db.checkIns,
   ], async () => {
     await db.examTemplates.clear();
     await db.candidates.clear();
     await db.circuits.clear();
     await db.evaluations.clear();
     await db.examSessions.clear();
+    await db.checkIns.clear();
   });
+}
+
+// Check-in helper functions
+
+// Get all check-ins for a circuit
+export async function getCheckInsForCircuit(
+  examId: string,
+  circuitId: string
+): Promise<CheckIn[]> {
+  return db.checkIns
+    .where('[examId+circuitId]')
+    .equals([examId, circuitId])
+    .toArray();
+}
+
+// Get check-in by candidate number for an exam
+export async function getCheckInByCandidate(
+  examId: string,
+  candidateNumber: string
+): Promise<CheckIn | undefined> {
+  return db.checkIns
+    .where('[examId+candidateNumber]')
+    .equals([examId, candidateNumber])
+    .first();
+}
+
+// Check if candidate is already checked in to any circuit
+export async function isAlreadyCheckedIn(
+  examId: string,
+  candidateId: string
+): Promise<CheckIn | undefined> {
+  return db.checkIns
+    .where('[examId+candidateId]')
+    .equals([examId, candidateId])
+    .first();
+}
+
+// Get unsynced check-ins (same boolean-index caveat as above)
+export async function getUnsyncedCheckIns(): Promise<CheckIn[]> {
+  return db.checkIns.filter((checkIn) => !checkIn.synced).toArray();
+}
+
+// Mark check-in as synced
+export async function markCheckInSynced(id: string): Promise<void> {
+  await db.checkIns.update(id, { synced: true, syncedAt: new Date() });
+}
+
+// Update stations completed for a check-in
+export async function updateStationsCompleted(
+  checkInId: string,
+  stationId: string
+): Promise<void> {
+  const checkIn = await db.checkIns.get(checkInId);
+  if (checkIn) {
+    const stationsCompleted = checkIn.stationsCompleted || [];
+    if (!stationsCompleted.includes(stationId)) {
+      stationsCompleted.push(stationId);
+      await db.checkIns.update(checkInId, { stationsCompleted });
+    }
+  }
 }
 
 export default db;
