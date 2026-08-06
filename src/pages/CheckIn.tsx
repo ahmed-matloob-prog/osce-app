@@ -18,7 +18,7 @@ export default function CheckIn() {
   const { examId } = useParams<{ examId: string }>();
 
   // Stores
-  const { exams, loadExams, circuits, loadCircuits } = useExamStore();
+  const { exams, loadExams, circuits, loadCircuits, addCircuit } = useExamStore();
   const { checkIns, loadAllCheckInsForExam, checkInCandidate, undoCheckIn } = useCheckInStore();
   const { candidates, loadCandidates } = useCandidateStore();
 
@@ -29,6 +29,8 @@ export default function CheckIn() {
   const [searchQuery, setSearchQuery] = useState('');
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'warning'; text: string } | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [newCircuitNumber, setNewCircuitNumber] = useState('1');
+  const [isAddingCircuit, setIsAddingCircuit] = useState(false);
 
   // Load initial data
   useEffect(() => {
@@ -52,6 +54,42 @@ export default function CheckIn() {
   const handleExamSelect = (exam: ExamTemplate) => {
     setSelectedCircuit(null);
     navigate(`/checkin/${exam.id}`);
+  };
+
+  // Create a circuit without leaving check-in, and select it straight away so
+  // the admin can carry on scanning.
+  // Takes the number as an argument rather than reading state, so callers that
+  // compute one on the spot are not caught by React's asynchronous setState.
+  const handleAddCircuit = async (requestedNumber?: number) => {
+    if (!selectedExam || isAddingCircuit) return;
+
+    const circuitNumber = requestedNumber ?? parseInt(newCircuitNumber, 10);
+    if (!circuitNumber || circuitNumber < 1) return;
+
+    if (circuits.some((c) => c.circuitNumber === circuitNumber)) {
+      setMessage({
+        type: 'warning',
+        text: t('checkIn.circuitExists', 'Circuit {{number}} already exists.', {
+          number: circuitNumber,
+        }),
+      });
+      setTimeout(() => setMessage(null), 3000);
+      return;
+    }
+
+    setIsAddingCircuit(true);
+    try {
+      const circuit = await addCircuit({
+        examId: selectedExam.id,
+        circuitNumber,
+        name: '',
+        examiners: [],
+        candidateIds: [],
+      });
+      setSelectedCircuit(circuit);
+    } finally {
+      setIsAddingCircuit(false);
+    }
   };
 
   // Handle QR scan. The scanner hands us the raw badge payload, which for
@@ -258,13 +296,27 @@ export default function CheckIn() {
             </h3>
             {circuits.length === 0 ? (
               <div className="text-center py-4">
-                <p className="text-gray-500 mb-2">{t('checkIn.noCircuits', 'No circuits created yet')}</p>
-                <button
-                  onClick={() => navigate(`/exam/${selectedExam.id}/circuits`)}
-                  className="text-blue-600 hover:text-blue-700 text-sm"
-                >
-                  {t('checkIn.createCircuits', 'Create Circuits')}
-                </button>
+                <p className="text-gray-500 mb-3">{t('checkIn.noCircuits', 'No circuits created yet')}</p>
+                {/* Created here rather than sending the admin elsewhere: this
+                    is the screen where the missing circuit is discovered, and
+                    there is no circuits page to send them to. */}
+                <div className="flex items-center justify-center gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={newCircuitNumber}
+                    onChange={(e) => setNewCircuitNumber(e.target.value)}
+                    className="w-24 border border-gray-300 rounded-lg px-3 py-2 text-center focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                  <button
+                    onClick={() => handleAddCircuit()}
+                    disabled={isAddingCircuit || !newCircuitNumber.trim()}
+                    className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    {t('checkIn.createCircuits', 'Create circuit')}
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
@@ -286,6 +338,22 @@ export default function CheckIn() {
                     </div>
                   </button>
                 ))}
+
+                {/* An extra circuit gets added on the morning more often than
+                    you would think. */}
+                <button
+                  onClick={() => {
+                    const next = Math.max(...circuits.map((c) => c.circuitNumber)) + 1;
+                    setNewCircuitNumber(String(next));
+                    handleAddCircuit(next);
+                  }}
+                  disabled={isAddingCircuit}
+                  className="p-3 rounded-lg border border-dashed border-gray-300 text-center text-gray-500 hover:border-blue-300 hover:text-blue-600 transition-colors"
+                >
+                  <div className="font-medium">
+                    + {t('checkIn.addCircuit', 'Add circuit')}
+                  </div>
+                </button>
               </div>
             )}
           </div>

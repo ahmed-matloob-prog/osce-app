@@ -1,10 +1,26 @@
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { useSyncStore } from '../stores/syncStore';
+import { db } from '../db/schema';
 
 export default function Dashboard() {
   const { t } = useTranslation();
   const { isOnline, pendingCount } = useSyncStore();
+
+  // These were hardcoded zeros. A live query keeps them honest while an exam
+  // is running, rather than needing a reload to mean anything.
+  //
+  // "Stations completed" counts evaluations: one evaluation is one candidate
+  // finishing one station. "Candidates evaluated" counts the distinct people
+  // behind them, so it does not multiply by the number of stations.
+  const stats = useLiveQuery(async () => {
+    const evaluations = await db.evaluations.toArray();
+    return {
+      candidatesEvaluated: new Set(evaluations.map((e) => e.candidateId)).size,
+      stationsCompleted: evaluations.length,
+    };
+  }, []);
 
   return (
     <div className="p-4 md:p-6 max-w-4xl mx-auto">
@@ -21,13 +37,17 @@ export default function Dashboard() {
       {/* Quick Stats */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
         <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-          <div className="text-3xl font-bold text-blue-600">0</div>
+          <div className="text-3xl font-bold text-blue-600 tabular-nums">
+            {stats?.candidatesEvaluated ?? '—'}
+          </div>
           <div className="text-sm text-gray-600 mt-1">
             {t('dashboard.candidatesEvaluated')}
           </div>
         </div>
         <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-          <div className="text-3xl font-bold text-green-600">0</div>
+          <div className="text-3xl font-bold text-green-600 tabular-nums">
+            {stats?.stationsCompleted ?? '—'}
+          </div>
           <div className="text-sm text-gray-600 mt-1">
             {t('dashboard.stationsCompleted')}
           </div>
