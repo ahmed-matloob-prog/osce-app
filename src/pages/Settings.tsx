@@ -446,17 +446,23 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* Test Data & QR Codes */}
+      {/* Badges, and — only where it cannot do harm — test data */}
       <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
-        <h2 className="font-semibold text-gray-900 mb-3">{t('settings.testData', 'Test Data & QR Codes')}</h2>
+        <h2 className="font-semibold text-gray-900 mb-3">{t('settings.testData', 'Candidate Badges')}</h2>
         <div className="space-y-3">
-          <button
-            onClick={handleGenerateTestData}
-            disabled={isGenerating}
-            className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white py-2 rounded-lg font-medium transition-colors"
-          >
-            {isGenerating ? t('common.loading') : t('settings.generateTestData', 'Generate Test Data (Exam + Candidates)')}
-          </button>
+          {/* Hidden whenever this build can reach the real Firebase project.
+              One tap creates an exam and eight candidates, and now that sync
+              works those upload to the live database. On a production build
+              there is no good reason to offer that next to the exam controls. */}
+          {!firebaseConfigured && (
+            <button
+              onClick={handleGenerateTestData}
+              disabled={isGenerating}
+              className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white py-2 rounded-lg font-medium transition-colors"
+            >
+              {isGenerating ? t('common.loading') : t('settings.generateTestData', 'Generate Test Data (Exam + Candidates)')}
+            </button>
+          )}
           <div className="pt-1">
             <label className="block text-sm font-medium text-gray-700 mb-2">
               {t('settings.badgeExam', 'Print badges for')}

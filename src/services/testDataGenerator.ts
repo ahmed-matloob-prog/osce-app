@@ -85,8 +85,8 @@ export function generateTestExam(): Omit<ExamTemplate, 'id' | 'createdAt' | 'upd
   ];
 
   return {
-    name: 'Mid-Term OSCE Exam - 2nd Stage',
-    nameAr: 'امتحان أوسكي نصف السنة - المرحلة الثانية',
+    name: '[TEST] Mid-Term OSCE Exam - 2nd Stage',
+    nameAr: '[تجريبي] امتحان أوسكي نصف السنة', 
     description: 'Sample exam with 3 stations for testing',
     stations,
     pinEnabled: false,
@@ -173,17 +173,25 @@ function createChecklistItem(
 
 /**
  * Generate test candidates with Arabic names
+/**
+ * Sample candidates for trying the app out.
+ *
+ * The IDs carry a TEST- prefix on purpose. Real college IDs are plain digits,
+ * so a prefixed one can never occupy a real student's number. With the unique
+ * index on candidateNumber, a fake 2024001 would cause the real 2024001 to be
+ * silently skipped on import as a duplicate — and the exam would then run
+ * against the wrong person under the right number.
  */
 export function generateTestCandidates(): Omit<Candidate, 'id'>[] {
   const candidates: Omit<Candidate, 'id'>[] = [
-    { candidateNumber: '2024001', name: 'أحمد محمد حسن', nameAr: 'أحمد محمد حسن', stage: 'المرحلة الثانية', group: 'A' },
-    { candidateNumber: '2024002', name: 'سارة علي عبدالله', nameAr: 'سارة علي عبدالله', stage: 'المرحلة الثانية', group: 'A' },
-    { candidateNumber: '2024003', name: 'محمد عمر خالد', nameAr: 'محمد عمر خالد', stage: 'المرحلة الثانية', group: 'A' },
-    { candidateNumber: '2024004', name: 'فاطمة خالد ابراهيم', nameAr: 'فاطمة خالد ابراهيم', stage: 'المرحلة الثانية', group: 'B' },
-    { candidateNumber: '2024005', name: 'يوسف ابراهيم محمود', nameAr: 'يوسف ابراهيم محمود', stage: 'المرحلة الثانية', group: 'B' },
-    { candidateNumber: '2024006', name: 'نور الدين أحمد', nameAr: 'نور الدين أحمد', stage: 'المرحلة الثانية', group: 'B' },
-    { candidateNumber: '2024007', name: 'ريم عبدالرحمن سعيد', nameAr: 'ريم عبدالرحمن سعيد', stage: 'المرحلة الثانية', group: 'A' },
-    { candidateNumber: '2024008', name: 'عمر حسين علي', nameAr: 'عمر حسين علي', stage: 'المرحلة الثانية', group: 'B' },
+    { candidateNumber: 'TEST-001', name: 'أحمد محمد حسن', nameAr: 'أحمد محمد حسن', stage: 'المرحلة الثانية', group: 'A' },
+    { candidateNumber: 'TEST-002', name: 'سارة علي عبدالله', nameAr: 'سارة علي عبدالله', stage: 'المرحلة الثانية', group: 'A' },
+    { candidateNumber: 'TEST-003', name: 'محمد عمر خالد', nameAr: 'محمد عمر خالد', stage: 'المرحلة الثانية', group: 'A' },
+    { candidateNumber: 'TEST-004', name: 'فاطمة خالد ابراهيم', nameAr: 'فاطمة خالد ابراهيم', stage: 'المرحلة الثانية', group: 'B' },
+    { candidateNumber: 'TEST-005', name: 'يوسف ابراهيم محمود', nameAr: 'يوسف ابراهيم محمود', stage: 'المرحلة الثانية', group: 'B' },
+    { candidateNumber: 'TEST-006', name: 'نور الدين أحمد', nameAr: 'نور الدين أحمد', stage: 'المرحلة الثانية', group: 'B' },
+    { candidateNumber: 'TEST-007', name: 'ريم عبدالرحمن سعيد', nameAr: 'ريم عبدالرحمن سعيد', stage: 'المرحلة الثانية', group: 'A' },
+    { candidateNumber: 'TEST-008', name: 'عمر حسين علي', nameAr: 'عمر حسين علي', stage: 'المرحلة الثانية', group: 'B' },
   ];
 
   return candidates;
