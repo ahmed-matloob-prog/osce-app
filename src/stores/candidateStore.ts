@@ -53,7 +53,7 @@ export const useCandidateStore = create<CandidateState>((set) => ({
   loadCandidates: async () => {
     set({ isLoading: true });
     try {
-      const candidates = await db.candidates.toArray();
+      const candidates = (await db.candidates.toArray()).filter((c) => !c.deleted);
       set({ candidates, isLoading: false });
     } catch (error) {
       console.error('Failed to load candidates:', error);
@@ -86,8 +86,10 @@ export const useCandidateStore = create<CandidateState>((set) => ({
   },
 
   // Delete a candidate
+  // Soft delete, so the removal syncs up instead of the record being pushed
+  // back the next time this device syncs. See the note on ExamTemplate.
   deleteCandidate: async (id) => {
-    await db.candidates.delete(id);
+    await db.candidates.update(id, { deleted: true, deletedAt: new Date() });
     set((state) => ({
       candidates: state.candidates.filter((c) => c.id !== id),
     }));
@@ -131,6 +133,20 @@ export const useCandidateStore = create<CandidateState>((set) => ({
         continue;
       }
 
+      // A soft-deleted record still holds the college ID, so importing that
+      // student again has to bring them back rather than quietly do nothing.
+      if (already.deleted) {
+        toEnrol.push({
+          ...already,
+          ...data,
+          candidateNumber,
+          deleted: false,
+          deletedAt: undefined,
+          examIds: [...new Set([...(already.examIds ?? []), examId])],
+        });
+        continue;
+      }
+
       if (already.examIds?.includes(examId)) {
         skipped.push(data.candidateNumber);
         continue;
@@ -167,10 +183,12 @@ export const useCandidateStore = create<CandidateState>((set) => ({
     // "use this student" produces someone the roster can actually see.
     const existing = await getCandidateByNumber(candidateNumber);
     if (existing) {
-      if (!existing.examIds?.includes(input.examId)) {
+      if (existing.deleted || !existing.examIds?.includes(input.examId)) {
         const enrolled = {
           ...existing,
-          examIds: [...(existing.examIds ?? []), input.examId],
+          deleted: false,
+          deletedAt: undefined,
+          examIds: [...new Set([...(existing.examIds ?? []), input.examId])],
         };
         await db.candidates.put(enrolled);
         set((state) => ({
@@ -215,8 +233,13 @@ export const useCandidateStore = create<CandidateState>((set) => ({
   },
 
   // Clear all candidates
+  // Soft delete rather than clear, so the removal syncs up instead of every
+  // record being pushed back on the next run.
   clearAll: async () => {
-    await db.candidates.clear();
+    const all = await db.candidates.toArray();
+    await db.candidates.bulkPut(
+      all.map((c) => ({ ...c, deleted: true, deletedAt: new Date() }))
+    );
     set({ candidates: [] });
   },
 }));

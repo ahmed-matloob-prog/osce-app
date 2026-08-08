@@ -200,6 +200,9 @@ export async function getEvaluationsForCircuit(
 export async function getCandidateByNumber(
   candidateNumber: string
 ): Promise<Candidate | undefined> {
+  // Includes soft-deleted records on purpose: they still hold the unique
+  // college ID, so callers need to see them in order to revive rather than
+  // fail on the index. Callers that want live students filter on `deleted`.
   return db.candidates
     .where('candidateNumber')
     .equals(normalizeCandidateNumber(candidateNumber))

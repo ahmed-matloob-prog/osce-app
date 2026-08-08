@@ -63,7 +63,7 @@ export const useExamStore = create<ExamState>((set, get) => ({
   loadExams: async () => {
     set({ isLoading: true });
     try {
-      const exams = await db.examTemplates.toArray();
+      const exams = (await db.examTemplates.toArray()).filter((e) => !e.deleted);
       set({ exams, isLoading: false });
     } catch (error) {
       console.error('Failed to load exams:', error);
@@ -96,8 +96,16 @@ export const useExamStore = create<ExamState>((set, get) => ({
   },
 
   // Delete an exam
+  // Soft delete. Removing the row achieved nothing: sync pushes every local
+  // exam up on each run, so any device that still held a copy re-created it.
+  // Marking it deleted lets the deletion travel, and bumping updatedAt makes
+  // the merge treat it as the newer version on every other device.
   deleteExam: async (id) => {
-    await db.examTemplates.delete(id);
+    await db.examTemplates.update(id, {
+      deleted: true,
+      deletedAt: new Date(),
+      updatedAt: new Date(),
+    });
     set((state) => ({
       exams: state.exams.filter((e) => e.id !== id),
     }));

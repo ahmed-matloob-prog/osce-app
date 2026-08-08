@@ -65,6 +65,22 @@ export interface ExamTemplate {
   isLocked: boolean;          // Exam state (draft/locked) - only matters if pinEnabled
   lockedAt?: Date;            // When exam was locked
   lockedBy?: string;          // Device ID that locked
+
+  /**
+   * Soft delete.
+   *
+   * Sync pushes every local record up on each run, so removing a row outright
+   * achieved nothing: the next sync from any device that still held a copy
+   * re-created it in the cloud, and it then spread back to everyone. Marking
+   * the record deleted lets the deletion itself travel — it syncs up and down
+   * like any other change.
+   *
+   * It also keeps the protection the Firestore rules were given deliberately:
+   * an exam template is hidden and recoverable rather than destroyed, so it
+   * cannot be wiped out from under the marks that reference it.
+   */
+  deleted?: boolean;
+  deletedAt?: Date;
 }
 
 // Candidate
@@ -104,6 +120,10 @@ export interface Candidate {
   registeredAt?: Date;
   registeredBy?: string;
   registeredWhere?: 'station' | 'check-in';
+
+  /** Soft delete — see the note on ExamTemplate. */
+  deleted?: boolean;
+  deletedAt?: Date;
 }
 
 // Circuit examiner assignment
