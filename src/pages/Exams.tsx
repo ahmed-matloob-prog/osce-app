@@ -154,9 +154,6 @@ export default function Exams() {
         </div>
       )}
 
-      <div className="hidden">
-      </div>
-
       {/* Loading */}
       {isLoading && (
         <div className="text-center py-12 text-gray-500">
