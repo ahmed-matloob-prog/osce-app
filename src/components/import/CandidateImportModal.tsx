@@ -31,13 +31,15 @@ export default function CandidateImportModal({ onImport, onClose }: CandidateImp
   // which taught the wrong shape and demonstrated the trap: typing 001 into a
   // General-formatted Excel cell silently makes it the number 1.
   const downloadExcelTemplate = () => {
+    // Required columns first, then the optional ones, so the shape of the
+    // requirement is obvious from the sheet itself.
     const data = [
-      ['الرقم', 'الاسم', 'NameEn', 'المرحلة', 'المجموعة', 'Email'],
-      ['2024001', 'أحمد محمد حسن', 'Ahmed M. Hassan', 'المرحلة الثانية', 'A', ''],
-      ['2024002', 'سارة علي عبدالله', 'Sara A. Abdullah', 'المرحلة الثانية', 'A', ''],
-      ['2024003', 'محمد عمر خالد', 'Mohammed O. Khalid', 'المرحلة الثانية', 'B', ''],
-      ['2024004', 'فاطمة خالد ابراهيم', 'Fatima K. Ibrahim', 'المرحلة الثانية', 'B', ''],
-      ['2024005', 'يوسف ابراهيم محمود', 'Youssef I. Mahmoud', 'المرحلة الثانية', 'A', ''],
+      ['الرقم', 'الاسم', 'المرحلة', 'NameEn', 'المجموعة'],
+      ['2024001', 'أحمد محمد حسن', 'المرحلة الثانية', 'Ahmed M. Hassan', 'A'],
+      ['2024002', 'سارة علي عبدالله', 'المرحلة الثانية', 'Sara A. Abdullah', 'A'],
+      ['2024003', 'محمد عمر خالد', 'المرحلة الثانية', 'Mohammed O. Khalid', 'B'],
+      ['2024004', 'فاطمة خالد ابراهيم', 'المرحلة الثانية', 'Fatima K. Ibrahim', 'B'],
+      ['2024005', 'يوسف ابراهيم محمود', 'المرحلة الثانية', 'Youssef I. Mahmoud', 'A'],
     ];
 
     const ws = XLSX.utils.aoa_to_sheet(data);
@@ -45,10 +47,9 @@ export default function CandidateImportModal({ onImport, onClose }: CandidateImp
     ws['!cols'] = [
       { wch: 12 }, // الرقم
       { wch: 26 }, // الاسم
-      { wch: 22 }, // NameEn
       { wch: 20 }, // المرحلة
+      { wch: 22 }, // NameEn
       { wch: 12 }, // المجموعة
-      { wch: 24 }, // Email
     ];
 
     const wb = XLSX.utils.book_new();
@@ -129,7 +130,7 @@ export default function CandidateImportModal({ onImport, onClose }: CandidateImp
               <div>
                 <div className="font-medium text-green-800">{t('candidates.downloadTemplate', 'تحميل قالب Excel')}</div>
                 <div className="text-sm text-green-600">
-                  {t('candidates.templateHint', 'مطلوب: الرقم، الاسم — اختياري: NameEn، المرحلة، المجموعة، Email')}
+                  {t('candidates.templateHint', 'مطلوب: الرقم، الاسم، المرحلة — اختياري: NameEn، المجموعة')}
                 </div>
                 <div className="text-xs text-green-600 mt-1">
                   {t('candidates.templateFormatHint', 'احفظ الملف بصيغة Excel‏ (.xlsx) وليس CSV، حتى تُحفظ الأسماء العربية بشكل صحيح.')}

@@ -131,7 +131,7 @@ export default {
     noCandidates: 'لا يوجد طلاب. أضف أو استورد طلاب.',
     importSuccess: 'تم استيراد {{count}} طالب بنجاح',
     downloadTemplate: 'تحميل قالب Excel',
-    templateHint: 'مطلوب: الرقم، الاسم — اختياري: NameEn، المرحلة، المجموعة، Email',
+    templateHint: 'مطلوب: الرقم، الاسم، المرحلة — اختياري: NameEn، المجموعة',
     templateFormatHint: 'احفظ الملف بصيغة Excel‏ (.xlsx) وليس CSV، حتى تُحفظ الأسماء العربية بشكل صحيح.',
     downloadExcel: 'تحميل القالب',
     deleteConfirm: 'هل أنت متأكد من حذف هذا الطالب؟',

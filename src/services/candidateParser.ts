@@ -47,15 +47,19 @@ function parseRows(rows: string[][]): ParseResult {
     nameLatin: latinNameCol,
     stage: findCol(['stage', 'المرحلة']),
     group: findCol(['group', 'المجموعة', 'فوج']),
-    email: findCol(['email', 'mail', 'البريد']),
   };
 
-  // Validate required columns
+  // Required columns: college ID, Arabic name, stage.
+  // NameEn and Group are optional; a Latin name alone is not enough, because
+  // the roster, the badge and every report are read in Arabic.
   if (colIndex.candidateNumber === -1) {
-    errors.push('العمود المطلوب غير موجود: رقم الطالب (CandidateNumber)');
+    errors.push('العمود المطلوب غير موجود: الرقم (ID)');
   }
-  if (colIndex.nameAr === -1 && colIndex.nameLatin === -1) {
-    errors.push('العمود المطلوب غير موجود: الاسم (Name / NameAr)');
+  if (colIndex.nameAr === -1) {
+    errors.push('العمود المطلوب غير موجود: الاسم (Name)');
+  }
+  if (colIndex.stage === -1) {
+    errors.push('العمود المطلوب غير موجود: المرحلة (Stage)');
   }
 
   if (errors.length > 0) {
@@ -77,28 +81,31 @@ function parseRows(rows: string[][]): ParseResult {
     const candidateNumber = getCell(colIndex.candidateNumber);
     const nameAr = colIndex.nameAr >= 0 ? getCell(colIndex.nameAr) : '';
     const nameLatin = colIndex.nameLatin >= 0 ? getCell(colIndex.nameLatin) : '';
+    const stage = colIndex.stage >= 0 ? getCell(colIndex.stage) : '';
 
-    // Whichever name the sheet has. When it has both they are kept separately,
-    // so a badge can show the student's name in each script.
-    const primaryName = nameLatin || nameAr;
-
-    // Validate required fields
+    // Validate required fields — a row missing any of the three is reported
+    // and skipped rather than imported half-formed.
     if (!candidateNumber) {
-      errors.push(`صف ${i + 1}: رقم الطالب مفقود`);
+      errors.push(`صف ${i + 1}: الرقم مفقود`);
       continue;
     }
-    if (!primaryName) {
+    if (!nameAr) {
       errors.push(`صف ${i + 1}: الاسم مفقود`);
+      continue;
+    }
+    if (!stage) {
+      errors.push(`صف ${i + 1}: المرحلة مفقودة`);
       continue;
     }
 
     const candidate: Omit<Candidate, 'id'> = {
       candidateNumber,
-      name: primaryName,
-      nameAr: nameAr || undefined,
-      email: colIndex.email >= 0 ? getCell(colIndex.email) : undefined,
+      // The Latin name becomes the primary when the sheet carries one, so a
+      // badge can show both scripts; otherwise the Arabic name serves as both.
+      name: nameLatin || nameAr,
+      nameAr,
+      stage,
       group: colIndex.group >= 0 ? getCell(colIndex.group) : undefined,
-      stage: colIndex.stage >= 0 ? getCell(colIndex.stage) : undefined,
     };
 
     // Clean up empty string values
