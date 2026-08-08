@@ -15,6 +15,8 @@ import type {
 interface ExamState {
   // Current data
   exams: ExamTemplate[];
+  /** Soft-deleted exams, so a deletion can be looked at and undone. */
+  deletedExams: ExamTemplate[];
   circuits: Circuit[];
   currentSession: ExamSession | null;
   currentEvaluation: Evaluation | null;
@@ -27,6 +29,8 @@ interface ExamState {
   addExam: (exam: Omit<ExamTemplate, 'id' | 'createdAt' | 'updatedAt'>) => Promise<ExamTemplate>;
   updateExam: (id: string, updates: Partial<ExamTemplate>) => Promise<void>;
   deleteExam: (id: string) => Promise<void>;
+  loadDeletedExams: () => Promise<void>;
+  restoreExam: (id: string) => Promise<void>;
 
   // Actions - Circuits
   loadCircuits: (examId: string) => Promise<void>;
@@ -54,6 +58,7 @@ interface ExamState {
 
 export const useExamStore = create<ExamState>((set, get) => ({
   exams: [],
+  deletedExams: [],
   circuits: [],
   currentSession: null,
   currentEvaluation: null,
@@ -108,6 +113,28 @@ export const useExamStore = create<ExamState>((set, get) => ({
     });
     set((state) => ({
       exams: state.exams.filter((e) => e.id !== id),
+    }));
+  },
+
+  // What has been deleted, so it can be reviewed and undone. Deleting an exam
+  // template is not something anyone should have to be brave about.
+  loadDeletedExams: async () => {
+    const deletedExams = (await db.examTemplates.toArray()).filter((e) => e.deleted);
+    set({ deletedExams });
+  },
+
+  restoreExam: async (id) => {
+    // Bumping updatedAt is what carries the restore to other devices, the
+    // same way the deletion travelled.
+    await db.examTemplates.update(id, {
+      deleted: false,
+      deletedAt: undefined,
+      updatedAt: new Date(),
+    });
+    const restored = await db.examTemplates.get(id);
+    set((state) => ({
+      exams: restored ? [...state.exams, restored] : state.exams,
+      deletedExams: state.deletedExams.filter((e) => e.id !== id),
     }));
   },
 

@@ -142,6 +142,12 @@ export default {
     templateFormatHint: 'احفظ الملف بصيغة Excel‏ (.xlsx) وليس CSV، حتى تُحفظ الأسماء العربية بشكل صحيح.',
     downloadExcel: 'تحميل القالب',
     deleteConfirm: 'هل أنت متأكد من حذف هذا الطالب؟',
+    deletedTitle: '{{count}} طالب محذوف',
+    deletedHint: 'مخفيون وليسوا ممسوحين.',
+    restoreAll: 'استعادة الكل',
+    restored: 'تمت استعادة {{count}} طالب.',
+    restoreBlocked: '{{count}} تعذّرت استعادتهم — الرقم الجامعي مستخدم الآن:',
+    clearAllConfirm: 'حذف جميع الطلاب؟\n\nسيتم إخفاؤهم وليس مسحهم، ويمكن استعادتهم من هذه الصفحة.',
   },
 
   // Exams Management
@@ -160,6 +166,9 @@ export default {
     addItem: 'إضافة عنصر',
     deleteConfirm: 'هل أنت متأكد من حذف هذا الامتحان؟',
     noExams: 'لا توجد قوالب امتحانات. أنشئ امتحانك الأول.',
+    deletedTitle: 'امتحانات محذوفة',
+    deletedHint: 'مخفية وليست ممسوحة. يمكن استعادة أي منها.',
+    restore: 'استعادة',
   },
 
   // Reports

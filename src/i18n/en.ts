@@ -142,6 +142,12 @@ export default {
     templateFormatHint: 'Save as Excel (.xlsx), not CSV, so Arabic names are preserved.',
     downloadExcel: 'Download template',
     deleteConfirm: 'Are you sure you want to delete this candidate?',
+    deletedTitle: '{{count}} deleted students',
+    deletedHint: 'Hidden, not destroyed.',
+    restoreAll: 'Restore all',
+    restored: '{{count}} students restored.',
+    restoreBlocked: '{{count}} could not be restored — their college ID is now used by someone else:',
+    clearAllConfirm: 'Delete all students?\n\nThey are hidden rather than destroyed, and can be restored from this page.',
   },
 
   // Exams Management
@@ -160,6 +166,9 @@ export default {
     addItem: 'Add Item',
     deleteConfirm: 'Are you sure you want to delete this exam?',
     noExams: 'No exam templates yet. Create your first exam.',
+    deletedTitle: 'Deleted exams',
+    deletedHint: 'Hidden, not destroyed. Restore any of these to put it back.',
+    restore: 'Restore',
   },
 
   // Reports

@@ -31,6 +31,8 @@ export type ProvisionalResult =
 
 interface CandidateState {
   candidates: Candidate[];
+  /** Soft-deleted students, so "delete all" is not a one-way door. */
+  deletedCandidates: Candidate[];
   isLoading: boolean;
 
   // Actions
@@ -43,10 +45,13 @@ interface CandidateState {
   confirmProvisional: (id: string) => Promise<void>;
   findByNumber: (candidateNumber: string) => Promise<Candidate | undefined>;
   clearAll: () => Promise<void>;
+  loadDeletedCandidates: () => Promise<void>;
+  restoreDeletedCandidates: () => Promise<{ restored: number; blocked: string[] }>;
 }
 
 export const useCandidateStore = create<CandidateState>((set) => ({
   candidates: [],
+  deletedCandidates: [],
   isLoading: false,
 
   // Load all candidates
@@ -225,6 +230,47 @@ export const useCandidateStore = create<CandidateState>((set) => ({
         c.id === id ? { ...c, provisional: false } : c
       ),
     }));
+  },
+
+  loadDeletedCandidates: async () => {
+    const deletedCandidates = (await db.candidates.toArray()).filter((c) => c.deleted);
+    set({ deletedCandidates });
+  },
+
+  // Put every deleted student back.
+  //
+  // A restore can be blocked: if the college ID has since been taken by a live
+  // record, putting this one back would break the unique index. Those are
+  // reported by number rather than failing the whole operation.
+  restoreDeletedCandidates: async () => {
+    const all = await db.candidates.toArray();
+    const liveNumbers = new Set(
+      all.filter((c) => !c.deleted).map((c) => normalizeCandidateNumber(c.candidateNumber))
+    );
+
+    const restored: Candidate[] = [];
+    const blocked: string[] = [];
+
+    for (const candidate of all.filter((c) => c.deleted)) {
+      const number = normalizeCandidateNumber(candidate.candidateNumber);
+      if (liveNumbers.has(number)) {
+        blocked.push(candidate.candidateNumber);
+        continue;
+      }
+      liveNumbers.add(number);
+      restored.push({ ...candidate, deleted: false, deletedAt: undefined });
+    }
+
+    if (restored.length > 0) await db.candidates.bulkPut(restored);
+
+    set((state) => ({
+      candidates: [...state.candidates, ...restored],
+      deletedCandidates: state.deletedCandidates.filter((c) =>
+        blocked.includes(c.candidateNumber)
+      ),
+    }));
+
+    return { restored: restored.length, blocked };
   },
 
   // Find candidate by number (for QR scanning)

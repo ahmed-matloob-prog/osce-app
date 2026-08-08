@@ -8,7 +8,7 @@ import type { Candidate } from '../types';
 
 export default function Candidates() {
   const { t } = useTranslation();
-  const { candidates, isLoading, loadCandidates, importCandidates, addCandidate, deleteCandidate, clearAll, confirmProvisional } = useCandidateStore();
+  const { candidates, isLoading, loadCandidates, importCandidates, addCandidate, deleteCandidate, clearAll, confirmProvisional, deletedCandidates, loadDeletedCandidates, restoreDeletedCandidates } = useCandidateStore();
   const { exams, loadExams } = useExamStore();
   const [examFilter, setExamFilter] = useState('');
 
@@ -32,7 +32,22 @@ export default function Candidates() {
   useEffect(() => {
     loadCandidates();
     loadExams();
-  }, [loadCandidates, loadExams]);
+    loadDeletedCandidates();
+  }, [loadCandidates, loadExams, loadDeletedCandidates]);
+
+  const handleRestoreDeleted = async () => {
+    const { restored, blocked } = await restoreDeletedCandidates();
+    const lines = [t('candidates.restored', '{{count}} students restored.', { count: restored })];
+    if (blocked.length > 0) {
+      lines.push(
+        `${t('candidates.restoreBlocked', {
+          count: blocked.length,
+          defaultValue: '{{count}} could not be restored — their college ID is now used by someone else:',
+        })}\n${blocked.slice(0, 10).join(', ')}`
+      );
+    }
+    alert(lines.join('\n\n'));
+  };
 
   const handleImport = async (examId: string, candidatesToImport: Omit<Candidate, 'id'>[]) => {
     const { added, enrolled, skipped } = await importCandidates(examId, candidatesToImport);
@@ -82,8 +97,10 @@ export default function Candidates() {
   };
 
   const handleClearAll = async () => {
-    if (confirm('هل تريد حذف جميع الطلاب؟ / Delete all candidates?')) {
+    if (confirm(t('candidates.clearAllConfirm',
+      'Delete all students?\n\nThey are hidden rather than destroyed, and can be restored from this page.'))) {
       await clearAll();
+      await loadDeletedCandidates();
     }
   };
 
@@ -115,6 +132,27 @@ export default function Candidates() {
           </button>
         </div>
       </div>
+
+      {/* Deleted students. "Delete all" is one tap, so it must not be a
+          one-way door. */}
+      {deletedCandidates.length > 0 && (
+        <div className="mb-4 rounded-xl border border-gray-200 bg-gray-50 p-4 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="font-medium text-gray-800">
+              {t('candidates.deletedTitle', '{{count}} deleted students', { count: deletedCandidates.length })}
+            </div>
+            <p className="text-sm text-gray-500 mt-0.5">
+              {t('candidates.deletedHint', 'Hidden, not destroyed.')}
+            </p>
+          </div>
+          <button
+            onClick={handleRestoreDeleted}
+            className="shrink-0 px-4 py-2 bg-gray-800 hover:bg-black text-white rounded-lg text-sm font-medium transition-colors"
+          >
+            {t('candidates.restoreAll', 'Restore all')}
+          </button>
+        </div>
+      )}
 
       {/* Which cohort to look at. The roster is institution-wide, so without
           this you are staring at every exam's students at once — which is

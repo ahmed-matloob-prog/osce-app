@@ -9,7 +9,7 @@ import { verifyPin, getDeviceId } from '../utils/pinUtils';
 export default function Exams() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { exams, isLoading, loadExams, updateExam } = useExamStore();
+  const { exams, isLoading, loadExams, updateExam, deletedExams, loadDeletedExams, restoreExam } = useExamStore();
 
   // PIN Modal state
   const [showPinModal, setShowPinModal] = useState(false);
@@ -18,7 +18,8 @@ export default function Exams() {
 
   useEffect(() => {
     loadExams();
-  }, [loadExams]);
+    loadDeletedExams();
+  }, [loadExams, loadDeletedExams]);
 
   // Handle exam click - check if PIN protected and locked
   const handleExamClick = (exam: ExamTemplate, e: React.MouseEvent) => {
@@ -115,6 +116,45 @@ export default function Exams() {
         >
           {t('exams.createExam')}
         </Link>
+      </div>
+
+      {/* Deleted exams. Nothing is destroyed — deleting marks the record and
+          hides it — so this is where a mistake gets undone. An exam template
+          is hours of work; nobody should have to be brave to remove one. */}
+      {deletedExams.length > 0 && (
+        <div className="mb-6 rounded-xl border border-gray-200 bg-gray-50 p-4">
+          <h2 className="font-semibold text-gray-800">
+            {t('exams.deletedTitle', 'Deleted exams')}
+          </h2>
+          <p className="text-sm text-gray-500 mt-1 mb-3">
+            {t('exams.deletedHint', 'Hidden, not destroyed. Restore any of these to put it back.')}
+          </p>
+          <div className="space-y-2">
+            {deletedExams.map((exam) => (
+              <div
+                key={exam.id}
+                className="flex items-center justify-between gap-3 bg-white rounded-lg border border-gray-200 p-3"
+              >
+                <div className="min-w-0">
+                  <div className="font-medium text-gray-900 truncate" dir="auto">{exam.name}</div>
+                  <div className="text-xs text-gray-500">
+                    {exam.stations.length} {t('exams.stations', 'stations')}
+                    {exam.deletedAt && ` · ${new Date(exam.deletedAt).toLocaleDateString()}`}
+                  </div>
+                </div>
+                <button
+                  onClick={() => restoreExam(exam.id)}
+                  className="shrink-0 px-4 py-2 bg-gray-800 hover:bg-black text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  {t('exams.restore', 'Restore')}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="hidden">
       </div>
 
       {/* Loading */}
