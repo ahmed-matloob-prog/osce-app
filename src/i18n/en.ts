@@ -130,6 +130,10 @@ export default {
     semester: 'Semester',
     noCandidates: 'No candidates yet. Add or import candidates.',
     importSuccess: '{{count}} candidates imported successfully',
+    downloadTemplate: 'Download Excel template',
+    templateHint: 'Required: ID, Name — optional: NameEn, Stage, Group, Email',
+    templateFormatHint: 'Save as Excel (.xlsx), not CSV, so Arabic names are preserved.',
+    downloadExcel: 'Download template',
     deleteConfirm: 'Are you sure you want to delete this candidate?',
   },
 

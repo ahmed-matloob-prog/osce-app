@@ -22,31 +22,38 @@ export default function CandidateImportModal({ onImport, onClose }: CandidateImp
   const [errors, setErrors] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // The template is offered as .xlsx rather than .csv on purpose. An xlsx
+  // carries its own encoding, whereas a CSV saved from Excel on an Arabic
+  // Windows machine lands in the Windows-1256 codepage — the importer copes
+  // with that now, but not handing out a CSV avoids the problem entirely.
+  //
+  // Sample IDs look like real college IDs. The previous template used 001–005,
+  // which taught the wrong shape and demonstrated the trap: typing 001 into a
+  // General-formatted Excel cell silently makes it the number 1.
   const downloadExcelTemplate = () => {
-    // Create workbook with Arabic headers
     const data = [
-      ['الرقم', 'الاسم', 'المرحلة', 'المجموعة'],
-      ['001', 'أحمد حسن', 'المرحلة الثانية', 'A'],
-      ['002', 'سارة علي', 'المرحلة الثانية', 'A'],
-      ['003', 'محمد عمر', 'المرحلة الثانية', 'B'],
-      ['004', 'فاطمة خالد', 'المرحلة الثانية', 'B'],
-      ['005', 'يوسف ابراهيم', 'المرحلة الثانية', 'A'],
+      ['الرقم', 'الاسم', 'NameEn', 'المرحلة', 'المجموعة', 'Email'],
+      ['2024001', 'أحمد محمد حسن', 'Ahmed M. Hassan', 'المرحلة الثانية', 'A', ''],
+      ['2024002', 'سارة علي عبدالله', 'Sara A. Abdullah', 'المرحلة الثانية', 'A', ''],
+      ['2024003', 'محمد عمر خالد', 'Mohammed O. Khalid', 'المرحلة الثانية', 'B', ''],
+      ['2024004', 'فاطمة خالد ابراهيم', 'Fatima K. Ibrahim', 'المرحلة الثانية', 'B', ''],
+      ['2024005', 'يوسف ابراهيم محمود', 'Youssef I. Mahmoud', 'المرحلة الثانية', 'A', ''],
     ];
 
     const ws = XLSX.utils.aoa_to_sheet(data);
 
-    // Set RTL for the sheet
     ws['!cols'] = [
-      { wch: 10 }, // الرقم
-      { wch: 25 }, // الاسم
+      { wch: 12 }, // الرقم
+      { wch: 26 }, // الاسم
+      { wch: 22 }, // NameEn
       { wch: 20 }, // المرحلة
       { wch: 12 }, // المجموعة
+      { wch: 24 }, // Email
     ];
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'الطلاب');
 
-    // Download
     XLSX.writeFile(wb, 'candidate-template.xlsx');
   };
 
@@ -121,7 +128,12 @@ export default function CandidateImportModal({ onImport, onClose }: CandidateImp
             <div className="flex items-center justify-between">
               <div>
                 <div className="font-medium text-green-800">{t('candidates.downloadTemplate', 'تحميل قالب Excel')}</div>
-                <div className="text-sm text-green-600">{t('candidates.templateHint', 'الأعمدة: الرقم، الاسم، المرحلة، المجموعة')}</div>
+                <div className="text-sm text-green-600">
+                  {t('candidates.templateHint', 'مطلوب: الرقم، الاسم — اختياري: NameEn، المرحلة، المجموعة، Email')}
+                </div>
+                <div className="text-xs text-green-600 mt-1">
+                  {t('candidates.templateFormatHint', 'احفظ الملف بصيغة Excel‏ (.xlsx) وليس CSV، حتى تُحفظ الأسماء العربية بشكل صحيح.')}
+                </div>
               </div>
               <button
                 onClick={downloadExcelTemplate}
