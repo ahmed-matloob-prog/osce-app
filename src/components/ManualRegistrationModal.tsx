@@ -121,7 +121,7 @@ export default function ManualRegistrationModal({
                 className="w-full border border-gray-300 rounded-lg px-4 py-3 font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
               <p className="text-xs text-gray-500 mt-1">
-                {t('manualEntry.collegeIdHint', 'Copy it exactly from the student’s college card, including any leading zeros.')}
+                {t('manualEntry.collegeIdHint', 'Copy it exactly from the student’s college card.')}
               </p>
             </div>
 

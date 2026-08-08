@@ -344,7 +344,7 @@ export default {
     subtitle:
       'For a student who is not on the roster. They can be scored straight away; an admin checks the college ID afterwards.',
     collegeId: 'College ID',
-    collegeIdHint: 'Copy it exactly from the student’s college card, including any leading zeros.',
+    collegeIdHint: 'Copy it exactly from the student’s college card.',
     name: 'Name',
     nameAr: 'Name in Arabic',
     group: 'Group',
