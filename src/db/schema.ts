@@ -119,6 +119,41 @@ class OSCEDatabase extends Dexie {
     this.version(4).stores({
       candidates: 'id, &candidateNumber, name, group, stage',
     });
+
+    // Version 5
+    // -------------------------------------------------------------------
+    // Candidates used to be a single global pool: every exam saw every
+    // student. Printing badges for one exam printed the whole database, and an
+    // examiner could pick anybody from any cohort.
+    //
+    // A candidate is now enrolled in exams. Not owned by one — students resit,
+    // and sit different exams in later terms, and they must stay one person
+    // with one college ID so their identity and their history hold together.
+    // `*examIds` is a multiEntry index, so `where('examIds').equals(examId)`
+    // is a real indexed lookup rather than a scan.
+    this.version(5)
+      .stores({
+        candidates: 'id, &candidateNumber, *examIds, name, group, stage',
+      })
+      .upgrade(async (tx) => {
+        // Anyone already on file predates enrolment, so there is no way to
+        // know which exam they belong to. Enrol them everywhere: that keeps
+        // behaviour identical to before the upgrade, and nobody vanishes from
+        // a list they were in yesterday. Re-importing per exam tidies it up.
+        const examIds = (await tx.table('examTemplates').toArray()).map((e) => e.id);
+        const candidates = await tx.table('candidates').toArray();
+
+        for (const candidate of candidates) {
+          if (candidate.examIds?.length) continue;
+          await tx.table('candidates').update(candidate.id, { examIds });
+        }
+
+        if (candidates.length) {
+          console.warn(
+            `[db] enrolled ${candidates.length} existing candidate(s) into all ${examIds.length} exam(s)`
+          );
+        }
+      });
   }
 }
 

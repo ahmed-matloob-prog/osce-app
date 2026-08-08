@@ -1,14 +1,24 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useCandidateStore } from '../stores/candidateStore';
+import { useExamStore } from '../stores/examStore';
+import { candidatesForExam } from '../utils/qrUtils';
 import CandidateImportModal from '../components/import/CandidateImportModal';
 import type { Candidate } from '../types';
 
 export default function Candidates() {
   const { t } = useTranslation();
   const { candidates, isLoading, loadCandidates, importCandidates, addCandidate, deleteCandidate, clearAll, confirmProvisional } = useCandidateStore();
+  const { exams, loadExams } = useExamStore();
+  const [examFilter, setExamFilter] = useState('');
+
+  // The roster is institution-wide; an exam filter shows one cohort at a time.
+  const visibleCandidates = examFilter
+    ? candidatesForExam(candidates, examFilter)
+    : candidates;
+
   // Filtered in JS rather than by index — IndexedDB has no boolean key type
-  const provisionalCandidates = candidates.filter((c) => c.provisional);
+  const provisionalCandidates = visibleCandidates.filter((c) => c.provisional);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newCandidate, setNewCandidate] = useState({
@@ -21,24 +31,38 @@ export default function Candidates() {
 
   useEffect(() => {
     loadCandidates();
-  }, [loadCandidates]);
+    loadExams();
+  }, [loadCandidates, loadExams]);
 
-  const handleImport = async (candidatesToImport: Omit<Candidate, 'id'>[]) => {
-    const { added, skipped } = await importCandidates(candidatesToImport);
+  const handleImport = async (examId: string, candidatesToImport: Omit<Candidate, 'id'>[]) => {
+    const { added, enrolled, skipped } = await importCandidates(examId, candidatesToImport);
 
-    // Always say what was skipped. A silent "import successful" after every
-    // row was skipped is how you find out on exam morning that you loaded
-    // the wrong file.
-    let message = t('candidates.importSuccess', { count: added });
+    // Say plainly what happened to every row. A silent "import successful"
+    // after they were all skipped is how you find out on exam morning that
+    // you loaded the wrong file.
+    const lines = [t('candidates.importSuccess', { count: added })];
+
+    if (enrolled > 0) {
+      lines.push(
+        t('candidates.importEnrolled', {
+          count: enrolled,
+          defaultValue: '{{count}} already on file, now added to this exam.',
+        })
+      );
+    }
+
     if (skipped.length > 0) {
       const shown = skipped.slice(0, 10).join(', ');
       const more = skipped.length > 10 ? ` … +${skipped.length - 10}` : '';
-      message += `\n\n${t('candidates.importSkipped', {
-        count: skipped.length,
-        defaultValue: '{{count}} already on the roster and left unchanged:',
-      })}\n${shown}${more}`;
+      lines.push(
+        `${t('candidates.importSkipped', {
+          count: skipped.length,
+          defaultValue: '{{count}} already in this exam and left unchanged:',
+        })}\n${shown}${more}`
+      );
     }
-    alert(message);
+
+    alert(lines.join('\n\n'));
     setShowImportModal(false);
   };
 
@@ -91,6 +115,31 @@ export default function Candidates() {
           </button>
         </div>
       </div>
+
+      {/* Which cohort to look at. The roster is institution-wide, so without
+          this you are staring at every exam's students at once — which is
+          what made this confusing in the first place. */}
+      {exams.length > 0 && (
+        <div className="mb-4 flex items-center gap-3">
+          <label className="text-sm text-gray-600 shrink-0">
+            {t('candidates.showExam', 'Show')}
+          </label>
+          <select
+            value={examFilter}
+            onChange={(e) => setExamFilter(e.target.value)}
+            className="flex-1 border border-gray-300 rounded-lg px-3 py-2 bg-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="">
+              {t('candidates.allStudents', 'All students ({{count}})', { count: candidates.length })}
+            </option>
+            {exams.map((exam) => (
+              <option key={exam.id} value={exam.id}>
+                {exam.name} ({candidatesForExam(candidates, exam.id).length})
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Import Modal */}
       {showImportModal && (
@@ -224,7 +273,7 @@ export default function Candidates() {
       )}
 
       {/* Empty State */}
-      {!isLoading && candidates.length === 0 && (
+      {!isLoading && visibleCandidates.length === 0 && (
         <div className="text-center py-12">
           <div className="text-4xl mb-4">👥</div>
           <p className="text-gray-500">{t('candidates.noCandidates')}</p>
@@ -253,7 +302,7 @@ export default function Candidates() {
               </tr>
             </thead>
             <tbody>
-              {candidates.map((candidate) => (
+              {visibleCandidates.map((candidate) => (
                 <tr key={candidate.id} className="border-b border-gray-100 last:border-0">
                   <td className="px-4 py-3 font-mono text-sm">
                     {candidate.candidateNumber}

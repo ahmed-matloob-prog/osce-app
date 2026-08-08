@@ -1,11 +1,12 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as XLSX from 'xlsx';
 import { parseCandidatesFromFile } from '../../services/candidateParser';
+import { useExamStore } from '../../stores/examStore';
 import type { Candidate } from '../../types';
 
 interface CandidateImportModalProps {
-  onImport: (candidates: Omit<Candidate, 'id'>[]) => void;
+  onImport: (examId: string, candidates: Omit<Candidate, 'id'>[]) => void;
   onClose: () => void;
 }
 
@@ -17,10 +18,20 @@ interface ImportResult {
 
 export default function CandidateImportModal({ onImport, onClose }: CandidateImportModalProps) {
   const { t } = useTranslation();
+  const { exams, loadExams } = useExamStore();
   const [isLoading, setIsLoading] = useState(false);
   const [results, setResults] = useState<ImportResult[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
+  const [examId, setExamId] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    loadExams();
+  }, [loadExams]);
+
+  // With one exam there is nothing to choose
+  const selectedExamId = examId || (exams.length === 1 ? exams[0].id : '');
+  const selectedExam = exams.find((e) => e.id === selectedExamId);
 
   // The template is offered as .xlsx rather than .csv on purpose. An xlsx
   // carries its own encoding, whereas a CSV saved from Excel on an Arabic
@@ -101,8 +112,8 @@ export default function CandidateImportModal({ onImport, onClose }: CandidateImp
       .filter(r => r.selected)
       .map(r => r.candidate);
 
-    if (selectedCandidates.length > 0) {
-      onImport(selectedCandidates);
+    if (selectedCandidates.length > 0 && selectedExamId) {
+      onImport(selectedExamId, selectedCandidates);
     }
   };
 
@@ -145,6 +156,31 @@ export default function CandidateImportModal({ onImport, onClose }: CandidateImp
             </div>
           </div>
 
+          {/* Which exam this roster belongs to. Asked before the file, because
+              a roster without an exam is what made every cohort visible to
+              every exam in the first place. */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              {t('candidates.importIntoExam', 'Import these students into')}
+            </label>
+            {exams.length === 0 ? (
+              <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                {t('candidates.noExamsForImport', 'Create the exam first. Students are enrolled in an exam, so there has to be one to enrol them into.')}
+              </p>
+            ) : (
+              <select
+                value={selectedExamId}
+                onChange={(e) => setExamId(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-4 py-2 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">-- {t('candidates.selectExam', 'Select exam')} --</option>
+                {exams.map((exam) => (
+                  <option key={exam.id} value={exam.id}>{exam.name}</option>
+                ))}
+              </select>
+            )}
+          </div>
+
           {/* File Input */}
           <div className="mb-6">
             <input
@@ -156,8 +192,8 @@ export default function CandidateImportModal({ onImport, onClose }: CandidateImp
             />
             <button
               onClick={() => fileInputRef.current?.click()}
-              disabled={isLoading}
-              className="w-full py-8 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition-colors"
+              disabled={isLoading || !selectedExam}
+              className="w-full py-8 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-400 hover:bg-blue-50 disabled:opacity-50 disabled:hover:border-gray-300 disabled:hover:bg-transparent transition-colors"
             >
               {isLoading ? (
                 <div className="flex items-center justify-center gap-3">
@@ -259,10 +295,10 @@ export default function CandidateImportModal({ onImport, onClose }: CandidateImp
           </button>
           <button
             onClick={handleImport}
-            disabled={selectedCount === 0}
+            disabled={selectedCount === 0 || !selectedExam}
             className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white px-6 py-2 rounded-lg font-medium transition-colors"
           >
-            {t('candidates.importCount', `Import ${selectedCount} Candidate${selectedCount !== 1 ? 's' : ''}`, { count: selectedCount })}
+            {t('candidates.importCount', `Import ${selectedCount} Candidate${selectedCount !== 1 ? 's' : ''}`, { count: selectedCount })}{selectedExam ? ` → ${selectedExam.name}` : ''}
           </button>
         </div>
       </div>

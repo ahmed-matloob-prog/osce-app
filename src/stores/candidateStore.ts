@@ -5,11 +5,14 @@ import type { Candidate } from '../types';
 
 export interface ImportResult {
   added: number;
-  /** College IDs that were already on the roster, or missing from the row. */
+  /** Already on file, and now enrolled in this exam rather than duplicated. */
+  enrolled: number;
+  /** College IDs already enrolled in this exam, or missing from the row. */
   skipped: string[];
 }
 
 export interface ProvisionalInput {
+  examId: string;
   candidateNumber: string;
   name: string;
   nameAr?: string;
@@ -35,7 +38,7 @@ interface CandidateState {
   addCandidate: (candidate: Omit<Candidate, 'id'>) => Promise<Candidate>;
   updateCandidate: (id: string, updates: Partial<Candidate>) => Promise<void>;
   deleteCandidate: (id: string) => Promise<void>;
-  importCandidates: (candidates: Omit<Candidate, 'id'>[]) => Promise<ImportResult>;
+  importCandidates: (examId: string, candidates: Omit<Candidate, 'id'>[]) => Promise<ImportResult>;
   registerProvisional: (input: ProvisionalInput) => Promise<ProvisionalResult>;
   confirmProvisional: (id: string) => Promise<void>;
   findByNumber: (candidateNumber: string) => Promise<Candidate | undefined>;
@@ -91,42 +94,65 @@ export const useCandidateStore = create<CandidateState>((set) => ({
   },
 
   // Import multiple candidates (from CSV)
-  // Import policy: add students who are new, skip ones already on the roster,
-  // and report exactly what was skipped.
+  // Import a roster into one exam.
   //
-  // Skipping rather than overwriting is the non-destructive choice — an import
-  // must never silently replace a record that was corrected inside the app,
-  // and re-running the same file must be harmless. The trade-off is that
-  // corrections in a re-exported roster are not picked up; those have to be
-  // edited directly. A "47 of 47 skipped" report is also how you notice you
-  // just loaded last year's list.
-  importCandidates: async (candidatesData) => {
+  // A student already on file is enrolled in this exam rather than duplicated,
+  // so a returning cohort keeps its existing records — and any names corrected
+  // in the app survive into the next term. Only someone already enrolled in
+  // *this* exam is skipped, which keeps re-running the same file harmless
+  // while still letting the same person appear in a second exam.
+  //
+  // Nothing is overwritten. An import must never silently replace a record
+  // that was corrected by hand, and "47 of 47 skipped" is how you notice you
+  // loaded last year's list.
+  importCandidates: async (examId, candidatesData) => {
     const existing = await db.candidates.toArray();
-    const seen = new Set(existing.map((c) => normalizeCandidateNumber(c.candidateNumber)));
+    const byNumber = new Map(
+      existing.map((c) => [normalizeCandidateNumber(c.candidateNumber), c])
+    );
 
     const toAdd: Candidate[] = [];
+    const toEnrol: Candidate[] = [];
     const skipped: string[] = [];
+    const seenInFile = new Set<string>();
 
     for (const data of candidatesData) {
       const candidateNumber = normalizeCandidateNumber(data.candidateNumber);
 
-      // `seen` grows as we go, so duplicates inside the file itself are
-      // caught too, not just collisions with the existing roster.
-      if (!candidateNumber || seen.has(candidateNumber)) {
+      if (!candidateNumber || seenInFile.has(candidateNumber)) {
         skipped.push(data.candidateNumber || '(no college ID)');
         continue;
       }
+      seenInFile.add(candidateNumber);
 
-      seen.add(candidateNumber);
-      toAdd.push({ ...data, candidateNumber, id: uuidv4() });
+      const already = byNumber.get(candidateNumber);
+      if (!already) {
+        toAdd.push({ ...data, candidateNumber, examIds: [examId], id: uuidv4() });
+        continue;
+      }
+
+      if (already.examIds?.includes(examId)) {
+        skipped.push(data.candidateNumber);
+        continue;
+      }
+
+      toEnrol.push({ ...already, examIds: [...(already.examIds ?? []), examId] });
     }
 
-    if (toAdd.length > 0) {
-      await db.candidates.bulkAdd(toAdd);
-      set((state) => ({ candidates: [...state.candidates, ...toAdd] }));
+    if (toAdd.length > 0) await db.candidates.bulkAdd(toAdd);
+    if (toEnrol.length > 0) await db.candidates.bulkPut(toEnrol);
+
+    if (toAdd.length || toEnrol.length) {
+      const enrolledById = new Map(toEnrol.map((c) => [c.id, c]));
+      set((state) => ({
+        candidates: [
+          ...state.candidates.map((c) => enrolledById.get(c.id) ?? c),
+          ...toAdd,
+        ],
+      }));
     }
 
-    return { added: toAdd.length, skipped };
+    return { added: toAdd.length, enrolled: toEnrol.length, skipped };
   },
 
   // Register a student who is not on the roster — late registration on exam
@@ -137,8 +163,21 @@ export const useCandidateStore = create<CandidateState>((set) => ({
 
     // If the ID is already taken, hand back that student rather than creating
     // a second record for them — the unique index would reject it anyway.
+    // Enrol them in this exam first if they are not already, so choosing
+    // "use this student" produces someone the roster can actually see.
     const existing = await getCandidateByNumber(candidateNumber);
     if (existing) {
+      if (!existing.examIds?.includes(input.examId)) {
+        const enrolled = {
+          ...existing,
+          examIds: [...(existing.examIds ?? []), input.examId],
+        };
+        await db.candidates.put(enrolled);
+        set((state) => ({
+          candidates: state.candidates.map((c) => (c.id === enrolled.id ? enrolled : c)),
+        }));
+        return { status: 'already-exists', candidate: enrolled };
+      }
       return { status: 'already-exists', candidate: existing };
     }
 
@@ -148,6 +187,7 @@ export const useCandidateStore = create<CandidateState>((set) => ({
       name: input.name.trim(),
       nameAr: input.nameAr?.trim() || undefined,
       group: input.group?.trim() || undefined,
+      examIds: [input.examId],
       provisional: true,
       registeredAt: new Date(),
       registeredBy: input.registeredBy,

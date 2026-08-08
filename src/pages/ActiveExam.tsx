@@ -7,7 +7,7 @@ import { useCheckInStore } from '../stores/checkInStore';
 import { useSyncStore } from '../stores/syncStore';
 import type { ChecklistItem, Candidate, IdentificationMethod } from '../types';
 import { GLOBAL_RATING_LABELS, IDENTIFICATION_METHOD_LABELS } from '../types';
-import { validateQR, findCandidateByNumber } from '../utils/qrUtils';
+import { validateQR, findCandidateByNumber, candidatesForExam } from '../utils/qrUtils';
 import { downloadBackup } from '../services/backupExporter';
 
 /** Where a student sits relative to the circuit this station belongs to. */
@@ -75,6 +75,11 @@ export default function ActiveExam() {
   const currentExam = exams.find((e) => e.id === currentSession?.examId);
   const currentStation = currentExam?.stations.find((s) => s.id === currentSession?.stationId);
   const currentCircuit = circuits.find((c) => c.id === currentSession?.circuitId);
+
+  // Only students enrolled in this exam can be reached at all — by scanning,
+  // by typing an ID, or off the list. "Show all" later widens from this
+  // circuit to the whole exam, never to another cohort.
+  const examCandidates = candidatesForExam(candidates, currentSession?.examId);
 
   // Circuit membership
   // ------------------
@@ -163,9 +168,9 @@ export default function ActiveExam() {
   const handleSearchSubmit = useCallback(() => {
     const query = searchQuery.trim();
     if (!query) return;
-    const match = findCandidateByNumber(candidates, query);
+    const match = findCandidateByNumber(examCandidates, query);
     if (match) proposeCandidate(match, 'typed-id');
-  }, [searchQuery, candidates, proposeCandidate]);
+  }, [searchQuery, examCandidates, proposeCandidate]);
 
   // Handle QR code scan result.
   //
@@ -193,7 +198,7 @@ export default function ActiveExam() {
       return;
     }
 
-    const candidate = findCandidateByNumber(candidates, result.data.candidateNumber);
+    const candidate = findCandidateByNumber(examCandidates, result.data.candidateNumber);
 
     if (!candidate) {
       setScanError(`No candidate with number ${result.data.candidateNumber}. Select from the list instead.`);
@@ -208,12 +213,11 @@ export default function ActiveExam() {
     }
 
     proposeCandidate(candidate, 'scanned');
-  }, [candidates, exams, currentSession?.examId, currentExam?.name, proposeCandidate]);
+  }, [examCandidates, exams, currentSession?.examId, currentExam?.name, proposeCandidate]);
 
-  // Candidates checked into this circuit, when that is knowable
   const circuitCandidates = examUsesCheckIn && !showAllCandidates
-    ? candidates.filter((c) => circuitStatusFor(c).kind === 'this-circuit')
-    : candidates;
+    ? examCandidates.filter((c) => circuitStatusFor(c).kind === 'this-circuit')
+    : examCandidates;
 
   // Filter candidates based on search query
   const filteredCandidates = circuitCandidates.filter((c) => {
@@ -631,6 +635,7 @@ export default function ActiveExam() {
       {showManualEntry && (
         <Suspense fallback={null}>
           <ManualRegistrationModal
+            examId={currentSession.examId}
             registeredWhere="station"
             registeredBy={currentSession.examinerName}
             onCancel={() => setShowManualEntry(false)}

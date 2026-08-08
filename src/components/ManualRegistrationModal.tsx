@@ -4,6 +4,8 @@ import { useCandidateStore } from '../stores/candidateStore';
 import type { Candidate } from '../types';
 
 interface ManualRegistrationModalProps {
+  /** The exam this student is being registered into. */
+  examId: string;
   /** Where this is being used, recorded on the record for later checking. */
   registeredWhere: 'station' | 'check-in';
   /** Examiner name or device id, so a questionable entry can be traced back. */
@@ -22,6 +24,7 @@ interface ManualRegistrationModalProps {
  * an admin verifies the typed college ID afterwards.
  */
 export default function ManualRegistrationModal({
+  examId,
   registeredWhere,
   registeredBy,
   onCancel,
@@ -45,6 +48,7 @@ export default function ManualRegistrationModal({
     setClash(null);
     try {
       const result = await registerProvisional({
+        examId,
         candidateNumber,
         name,
         nameAr,

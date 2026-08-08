@@ -5,7 +5,7 @@ import { useExamStore } from '../stores/examStore';
 import { useCheckInStore } from '../stores/checkInStore';
 import { useCandidateStore } from '../stores/candidateStore';
 import type { ExamTemplate, Circuit, Candidate } from '../types';
-import { validateQR, findCandidateByNumber } from '../utils/qrUtils';
+import { validateQR, findCandidateByNumber, candidatesForExam } from '../utils/qrUtils';
 import { getDeviceId } from '../utils/pinUtils';
 
 // Lazy load QR scanner
@@ -42,6 +42,10 @@ export default function CheckIn() {
   // copy meant it silently went stale whenever the exam list reloaded — the
   // header would keep rendering a detached snapshot of the exam.
   const selectedExam = examId ? exams.find((e) => e.id === examId) ?? null : null;
+
+  // Only students enrolled in this exam. Check-in used to search the whole
+  // database, so a student from another cohort could be checked into a circuit.
+  const examCandidates = candidatesForExam(candidates, selectedExam?.id);
 
   // Load whatever belongs to the exam the URL points at
   useEffect(() => {
@@ -125,7 +129,7 @@ export default function CheckIn() {
       return;
     }
 
-    const candidate = findCandidateByNumber(candidates, result.data.candidateNumber);
+    const candidate = findCandidateByNumber(examCandidates, result.data.candidateNumber);
     if (!candidate) {
       setMessage({
         type: 'error',
@@ -189,7 +193,7 @@ export default function CheckIn() {
     const query = searchQuery.trim().toLowerCase();
 
     // Find candidate by number or name
-    const candidate = candidates.find(
+    const candidate = examCandidates.find(
       (c) =>
         c.candidateNumber.toLowerCase() === query ||
         c.name.toLowerCase().includes(query) ||
@@ -478,6 +482,7 @@ export default function CheckIn() {
       {showManualEntry && selectedExam && selectedCircuit && (
         <Suspense fallback={null}>
           <ManualRegistrationModal
+            examId={selectedExam.id}
             registeredWhere="check-in"
             registeredBy={getDeviceId()}
             onCancel={() => setShowManualEntry(false)}

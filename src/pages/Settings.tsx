@@ -5,7 +5,7 @@ import { useSyncStore } from '../stores/syncStore';
 import { useExamStore } from '../stores/examStore';
 import { useCandidateStore } from '../stores/candidateStore';
 import { generateTestExam, generateTestCandidates, generateQRCodeAsync } from '../services/testDataGenerator';
-import { encodeQR } from '../utils/qrUtils';
+import { encodeQR, candidatesForExam } from '../utils/qrUtils';
 import {
   downloadBackup,
   getBackupCounts,
@@ -155,9 +155,13 @@ export default function Settings() {
   const selectedBadgeExamId = badgeExamId || (exams.length === 1 ? exams[0].id : '');
   const badgeExam = exams.find((e) => e.id === selectedBadgeExamId);
 
-  // Print in candidate-number order — the sheet gets cut up into a pile of
-  // badges, and IndexedDB's insertion order makes that pile useless.
-  const badgeCandidates = [...candidates].sort((a, b) =>
+  // Only the students enrolled in the chosen exam. Printing used to run over
+  // every candidate in the database, so with two cohorts loaded you got
+  // badges for both.
+  //
+  // Sorted by college ID, because the sheet gets cut into a pile and
+  // IndexedDB's insertion order makes that pile useless.
+  const badgeCandidates = candidatesForExam(candidates, badgeExam?.id).sort((a, b) =>
     a.candidateNumber.localeCompare(b.candidateNumber, undefined, { numeric: true })
   );
 
@@ -179,11 +183,11 @@ export default function Settings() {
     try {
       // Generate and add test exam
       const testExam = generateTestExam();
-      await addExam(testExam);
+      const created = await addExam(testExam);
 
-      // Generate and add test candidates
+      // Enrol the test candidates in the exam they were made for
       const testCandidates = generateTestCandidates();
-      await importCandidates(testCandidates);
+      await importCandidates(created.id, testCandidates);
 
       // Reload candidates
       await loadCandidates();
@@ -200,8 +204,8 @@ export default function Settings() {
   // Open the badge sheet. Badges carry the exam they belong to, so an exam
   // has to be picked before any can be generated.
   const handlePrintQRCodes = () => {
-    if (candidates.length === 0) {
-      alert(t('settings.noCandidatesForBadges', 'No candidates yet. Import candidates first, or generate test data below.'));
+    if (badgeCandidates.length === 0) {
+      alert(t('settings.noCandidatesForBadges', 'No students are enrolled in this exam yet. Import a roster for it first.'));
       return;
     }
     if (!badgeExam) {
@@ -487,10 +491,10 @@ export default function Settings() {
             )}
             <button
               onClick={handlePrintQRCodes}
-              disabled={!badgeExam || candidates.length === 0}
+              disabled={!badgeExam || badgeCandidates.length === 0}
               className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white py-2 rounded-lg font-medium transition-colors"
             >
-              {t('settings.printQRCodes', 'Print QR Codes for Candidates')} ({candidates.length})
+              {t('settings.printQRCodes', 'Print QR Codes for Candidates')} ({badgeCandidates.length})
             </button>
           </div>
         </div>
@@ -515,7 +519,7 @@ export default function Settings() {
                 <h2 className="text-xl font-bold text-gray-900">{t('settings.qrCodes', 'Candidate QR Codes')}</h2>
                 <p className="text-sm text-gray-500">
                   {t('settings.badgeSheetFor', '{{count}} badges for {{exam}}', {
-                    count: candidates.length,
+                    count: badgeCandidates.length,
                     exam: badgeExam.name,
                   })}
                 </p>

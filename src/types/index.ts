@@ -81,6 +81,18 @@ export interface Candidate {
   stage?: string;
   semester?: string;
 
+  /**
+   * Exams this student is enrolled in.
+   *
+   * A candidate is not owned by one exam. Students resit, and sit different
+   * exams in later terms, and they have to stay one person with one college ID
+   * so their identity and their marks history hold together. Enrolment is what
+   * scopes a roster to an exam; the student record itself is institution-wide.
+   *
+   * Optional only so records written before enrolment existed still load.
+   */
+  examIds?: string[];
+
   // Late registration
   // -----------------
   // Set when a student was added on exam day because they were not on the

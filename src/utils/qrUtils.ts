@@ -81,6 +81,26 @@ export function normalizeCandidateNumber(value: string | undefined | null): stri
 }
 
 /**
+ * The students enrolled in one exam.
+ *
+ * Candidates are institution-wide; enrolment is what scopes them to an exam.
+ * Every place that offers a list of students — badges, the station picker,
+ * check-in — goes through this, so none of them can drift apart.
+ *
+ * Records written before enrolment existed have no `examIds`. They are
+ * excluded rather than shown everywhere: the version 5 migration enrols them
+ * into every existing exam, so anything still lacking the field arrived some
+ * other way and should not silently appear in a cohort it was never added to.
+ */
+export function candidatesForExam<T extends { examIds?: string[] }>(
+  candidates: T[],
+  examId: string | undefined
+): T[] {
+  if (!examId) return [];
+  return candidates.filter((c) => c.examIds?.includes(examId));
+}
+
+/**
  * Resolve a scanned or typed college ID against a candidate list.
  *
  * Exact match first. The previous implementation compared with `includes()` in
