@@ -29,10 +29,22 @@ function parseRows(rows: string[][]): ParseResult {
     return headers.findIndex(h => keywords.some(k => h.includes(k)));
   };
 
-  // Find column indices from headers
+  // Name columns are resolved in two passes so a roster carrying both an
+  // English and an Arabic name keeps both. Matching a generic "name" in one
+  // pass swallowed whichever column came first: a sheet with Name and NameAr
+  // put the English name into the Arabic field and dropped the Arabic entirely.
+  const arabicNameCol = findCol(['namear', 'name_ar', 'arabicname', 'arabic_name', 'الاسم', 'اسم']);
+  const latinNameCol = (() => {
+    const explicit = findCol(['nameen', 'name_en', 'englishname', 'english_name']);
+    if (explicit >= 0) return explicit;
+    // Otherwise any remaining plain "name" column
+    return headers.findIndex((h, i) => i !== arabicNameCol && h.includes('name') && !h.includes('number'));
+  })();
+
   const colIndex = {
-    candidateNumber: findCol(['candidatenumber', 'candidate_number', 'number', 'id', 'رقم', 'الرقم']),
-    nameAr: findCol(['namear', 'name_ar', 'arabicname', 'arabic_name', 'الاسم', 'name', 'اسم']),
+    candidateNumber: findCol(['candidatenumber', 'candidate_number', 'number', 'رقم', 'الرقم']),
+    nameAr: arabicNameCol,
+    nameLatin: latinNameCol,
     stage: findCol(['stage', 'المرحلة']),
     group: findCol(['group', 'المجموعة', 'فوج']),
     email: findCol(['email', 'mail', 'البريد']),
@@ -42,8 +54,8 @@ function parseRows(rows: string[][]): ParseResult {
   if (colIndex.candidateNumber === -1) {
     errors.push('العمود المطلوب غير موجود: رقم الطالب (CandidateNumber)');
   }
-  if (colIndex.nameAr === -1) {
-    errors.push('العمود المطلوب غير موجود: الاسم (NameAr)');
+  if (colIndex.nameAr === -1 && colIndex.nameLatin === -1) {
+    errors.push('العمود المطلوب غير موجود: الاسم (Name / NameAr)');
   }
 
   if (errors.length > 0) {
@@ -63,22 +75,27 @@ function parseRows(rows: string[][]): ParseResult {
     const warnings: string[] = [];
 
     const candidateNumber = getCell(colIndex.candidateNumber);
-    const nameAr = getCell(colIndex.nameAr);
+    const nameAr = colIndex.nameAr >= 0 ? getCell(colIndex.nameAr) : '';
+    const nameLatin = colIndex.nameLatin >= 0 ? getCell(colIndex.nameLatin) : '';
+
+    // Whichever name the sheet has. When it has both they are kept separately,
+    // so a badge can show the student's name in each script.
+    const primaryName = nameLatin || nameAr;
 
     // Validate required fields
     if (!candidateNumber) {
       errors.push(`صف ${i + 1}: رقم الطالب مفقود`);
       continue;
     }
-    if (!nameAr) {
+    if (!primaryName) {
       errors.push(`صف ${i + 1}: الاسم مفقود`);
       continue;
     }
 
     const candidate: Omit<Candidate, 'id'> = {
       candidateNumber,
-      name: nameAr, // Use Arabic name as primary name
-      nameAr,
+      name: primaryName,
+      nameAr: nameAr || undefined,
       email: colIndex.email >= 0 ? getCell(colIndex.email) : undefined,
       group: colIndex.group >= 0 ? getCell(colIndex.group) : undefined,
       stage: colIndex.stage >= 0 ? getCell(colIndex.stage) : undefined,
@@ -173,6 +190,39 @@ export function parseCandidatesCSV(content: string): ParseResult {
 }
 
 /**
+ * Decode a text file, working out its encoding rather than assuming UTF-8.
+ *
+ * Excel on an Arabic Windows machine saves CSV in the Windows-1256 codepage,
+ * not UTF-8. Reading such a file as UTF-8 turns every Arabic name into
+ * mojibake — "أحمد محمد حسن" arrives as "����?����?���" — and the import
+ * looks like it worked.
+ *
+ * Strategy: honour a byte-order mark if present, otherwise try UTF-8 strictly.
+ * Arabic encoded as Windows-1256 is almost never valid UTF-8, so a strict
+ * decode throws and we fall back. Plain ASCII decodes identically either way,
+ * so files with no accented characters are unaffected.
+ */
+export async function decodeTextFile(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+
+  if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+    return new TextDecoder('utf-8').decode(bytes.subarray(3));
+  }
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) {
+    return new TextDecoder('utf-16le').decode(bytes.subarray(2));
+  }
+  if (bytes[0] === 0xfe && bytes[1] === 0xff) {
+    return new TextDecoder('utf-16be').decode(bytes.subarray(2));
+  }
+
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    return new TextDecoder('windows-1256').decode(bytes);
+  }
+}
+
+/**
  * Parse file (auto-detect format: Excel or CSV)
  */
 export async function parseCandidatesFromFile(file: File): Promise<ParseResult> {
@@ -180,9 +230,7 @@ export async function parseCandidatesFromFile(file: File): Promise<ParseResult> 
 
   if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
     return parseExcelFile(file);
-  } else {
-    // CSV - read as UTF-8
-    const content = await file.text();
-    return parseCandidatesCSV(content);
   }
+
+  return parseCandidatesCSV(await decodeTextFile(file));
 }
