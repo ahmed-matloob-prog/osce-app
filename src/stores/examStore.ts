@@ -175,10 +175,16 @@ export const useExamStore = create<ExamState>((set, get) => ({
 
   // Start an exam session
   startSession: async (sessionData) => {
-    // End any existing active session
-    const existingSession = await db.examSessions.where('isActive').equals(1).first();
-    if (existingSession) {
-      await db.examSessions.update(existingSession.id, { isActive: false });
+    // End any session still marked active.
+    //
+    // Filtered rather than indexed: IndexedDB has no boolean key type, so
+    // `where('isActive').equals(1)` matched nothing and no session was ever
+    // closed. They accumulated, every one of them still flagged active — so a
+    // device that moved between exams left a trail of sessions claiming to be
+    // running. Plural, because there is very likely a backlog to clear.
+    const stale = await db.examSessions.filter((s) => s.isActive).toArray();
+    for (const session of stale) {
+      await db.examSessions.update(session.id, { isActive: false });
     }
 
     const session: ExamSession = {
