@@ -31,6 +31,36 @@ export interface CircuitAssignmentResult {
   unknown: string[];
 }
 
+export type RemoveCircuitResult =
+  | { status: 'removed'; unassigned: number }
+  | { status: 'has-marks'; evaluations: number };
+
+/**
+ * Delete a circuit, unassigning anyone in it.
+ *
+ * Refuses if marks have been recorded against it. An evaluation stores the
+ * circuit it was taken in, so removing one that has been examined would leave
+ * those marks pointing at nothing — the same reason the Firestore rules will
+ * not let a device delete an exam template.
+ *
+ * A hard delete is safe here: circuits and check-ins are local to a device and
+ * are not synced, so nothing can push a deleted circuit back.
+ */
+export async function removeCircuit(circuitId: string): Promise<RemoveCircuitResult> {
+  const evaluations = await db.evaluations.filter((e) => e.circuitId === circuitId).count();
+  if (evaluations > 0) {
+    return { status: 'has-marks', evaluations };
+  }
+
+  const checkIns = await db.checkIns.filter((c) => c.circuitId === circuitId).toArray();
+  if (checkIns.length > 0) {
+    await db.checkIns.bulkDelete(checkIns.map((c) => c.id));
+  }
+  await db.circuits.delete(circuitId);
+
+  return { status: 'removed', unassigned: checkIns.length };
+}
+
 export interface DistributionResult {
   assigned: number;
   circuitsCreated: number[];

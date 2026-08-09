@@ -7,7 +7,7 @@ import { useCandidateStore } from '../stores/candidateStore';
 import type { ExamTemplate, Circuit, Candidate } from '../types';
 import { validateQR, findCandidateByNumber, candidatesForExam } from '../utils/qrUtils';
 import { getDeviceId } from '../utils/pinUtils';
-import { distributeIntoCircuits } from '../services/circuitAssignment';
+import { distributeIntoCircuits, removeCircuit } from '../services/circuitAssignment';
 
 // Lazy load QR scanner
 const QRScanner = lazy(() => import('../components/scanner/QRScanner'));
@@ -137,6 +137,42 @@ export default function CheckIn() {
     } finally {
       setIsAddingCircuit(false);
     }
+  };
+
+  const handleRemoveCircuit = async (circuit: Circuit, count: number) => {
+    if (!selectedExam) return;
+    const ok = confirm(
+      count > 0
+        ? t('checkIn.removeCircuitConfirm', {
+            defaultValue:
+              'Delete Circuit {{number}}?\n\n{{count}} students will be unassigned and can be placed again.',
+            number: circuit.circuitNumber,
+            count,
+          })
+        : t('checkIn.removeEmptyCircuitConfirm', 'Delete Circuit {{number}}?', {
+            number: circuit.circuitNumber,
+          })
+    );
+    if (!ok) return;
+
+    const result = await removeCircuit(circuit.id);
+    if (result.status === 'has-marks') {
+      alert(
+        t('checkIn.removeCircuitBlocked', {
+          defaultValue:
+            'Circuit {{number}} cannot be deleted — {{count}} marks have been recorded in it. Removing it would leave those marks pointing at nothing.',
+          number: circuit.circuitNumber,
+          count: result.evaluations,
+        })
+      );
+      return;
+    }
+
+    if (selectedCircuit?.id === circuit.id) setSelectedCircuit(null);
+    await Promise.all([
+      loadCircuits(selectedExam.id),
+      loadAllCheckInsForExam(selectedExam.id),
+    ]);
   };
 
   // Handle QR scan. The scanner hands us the raw badge payload, which for
@@ -406,23 +442,38 @@ export default function CheckIn() {
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                {/* A tile is a div rather than a button so the delete control
+                    can sit inside it — a button inside a button is invalid
+                    and browsers handle it unpredictably. */}
                 {circuits.map((circuit) => (
-                  <button
+                  <div
                     key={circuit.id}
-                    onClick={() => setSelectedCircuit(circuit)}
-                    className={`p-3 rounded-lg border text-center transition-colors ${
+                    className={`relative rounded-lg border transition-colors ${
                       selectedCircuit?.id === circuit.id
                         ? 'border-blue-500 bg-blue-50 text-blue-700'
                         : 'border-gray-200 hover:border-blue-300 text-gray-700'
                     }`}
                   >
-                    <div className="font-medium">
-                      {t('exam.circuit', 'Circuit')} {circuit.circuitNumber}
-                    </div>
-                    <div className="text-xs text-gray-500 mt-1">
-                      {getCircuitCount(circuit.id)} {t('checkIn.students', 'students')}
-                    </div>
-                  </button>
+                    <button
+                      onClick={() => setSelectedCircuit(circuit)}
+                      className="w-full p-3 text-center"
+                    >
+                      <div className="font-medium">
+                        {t('exam.circuit', 'Circuit')} {circuit.circuitNumber}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        {getCircuitCount(circuit.id)} {t('checkIn.students', 'students')}
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => handleRemoveCircuit(circuit, getCircuitCount(circuit.id))}
+                      title={t('checkIn.removeCircuit', 'Delete this circuit')}
+                      aria-label={t('checkIn.removeCircuit', 'Delete this circuit')}
+                      className="absolute top-1 right-1 w-6 h-6 min-w-0 min-h-0 flex items-center justify-center rounded text-gray-400 hover:text-red-600 hover:bg-red-50 text-sm leading-none"
+                    >
+                      &times;
+                    </button>
+                  </div>
                 ))}
 
                 {/* An extra circuit gets added on the morning more often than
