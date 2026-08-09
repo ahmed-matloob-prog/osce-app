@@ -31,6 +31,112 @@ export interface CircuitAssignmentResult {
   unknown: string[];
 }
 
+export interface DistributionResult {
+  assigned: number;
+  circuitsCreated: number[];
+  perCircuit: Record<number, number>;
+  /** Already placed, and left alone. */
+  skipped: number;
+}
+
+/**
+ * Split this exam's students evenly across a number of circuits.
+ *
+ * For when the split is yours to decide rather than something the registry
+ * already recorded in the roster.
+ *
+ * Students are ordered by college ID and dealt out in blocks, so circuit 1
+ * takes the first block of IDs rather than every fifteenth student.
+ * Consecutive IDs in one circuit make the door easier to run and a printed
+ * circuit list easier to read.
+ *
+ * Anyone already assigned is left where they are — this must not undo a
+ * placement somebody made on purpose.
+ */
+export async function distributeIntoCircuits(
+  examId: string,
+  circuitCount: number,
+  assignedBy: string
+): Promise<DistributionResult> {
+  const result: DistributionResult = {
+    assigned: 0,
+    circuitsCreated: [],
+    perCircuit: {},
+    skipped: 0,
+  };
+
+  if (circuitCount < 1) return result;
+
+  const enrolled = (await db.candidates.toArray()).filter(
+    (c) => !c.deleted && c.examIds?.includes(examId)
+  );
+
+  const existingCheckIns = await db.checkIns.where('examId').equals(examId).toArray();
+  const alreadyPlaced = new Set(existingCheckIns.map((c) => c.candidateId));
+
+  const toPlace = enrolled
+    .filter((c) => !alreadyPlaced.has(c.id))
+    .sort((a, b) =>
+      a.candidateNumber.localeCompare(b.candidateNumber, undefined, { numeric: true })
+    );
+  result.skipped = enrolled.length - toPlace.length;
+
+  if (toPlace.length === 0) return result;
+
+  // Create circuits 1..N that do not exist yet
+  const circuits = await db.circuits.where('examId').equals(examId).toArray();
+  const circuitByNumber = new Map(circuits.map((c) => [c.circuitNumber, c]));
+  const newCircuits: Circuit[] = [];
+  for (let n = 1; n <= circuitCount; n++) {
+    if (circuitByNumber.has(n)) continue;
+    const circuit: Circuit = {
+      id: uuidv4(),
+      examId,
+      circuitNumber: n,
+      name: '',
+      examiners: [],
+      candidateIds: [],
+    };
+    newCircuits.push(circuit);
+    circuitByNumber.set(n, circuit);
+    result.circuitsCreated.push(n);
+  }
+  if (newCircuits.length > 0) await db.circuits.bulkAdd(newCircuits);
+
+  // Deal out in blocks. The remainder is spread one per circuit across the
+  // earliest circuits rather than dumped on the last one.
+  const base = Math.floor(toPlace.length / circuitCount);
+  const remainder = toPlace.length % circuitCount;
+
+  const checkIns: CheckIn[] = [];
+  let index = 0;
+  for (let n = 1; n <= circuitCount; n++) {
+    const size = base + (n <= remainder ? 1 : 0);
+    const circuit = circuitByNumber.get(n)!;
+    for (let i = 0; i < size && index < toPlace.length; i++, index++) {
+      const candidate = toPlace[index];
+      checkIns.push({
+        id: uuidv4(),
+        examId,
+        circuitId: circuit.id,
+        candidateId: candidate.id,
+        candidateNumber: candidate.candidateNumber,
+        candidateName: candidate.name,
+        checkedInAt: new Date(),
+        checkedInBy: assignedBy,
+        stationsCompleted: [],
+        synced: false,
+      });
+    }
+    result.perCircuit[n] = size;
+  }
+
+  if (checkIns.length > 0) await db.checkIns.bulkAdd(checkIns);
+  result.assigned = checkIns.length;
+
+  return result;
+}
+
 export async function assignCircuitsFromRoster(
   examId: string,
   rows: CircuitAssignmentInput[],

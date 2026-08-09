@@ -7,6 +7,7 @@ import { useCandidateStore } from '../stores/candidateStore';
 import type { ExamTemplate, Circuit, Candidate } from '../types';
 import { validateQR, findCandidateByNumber, candidatesForExam } from '../utils/qrUtils';
 import { getDeviceId } from '../utils/pinUtils';
+import { distributeIntoCircuits } from '../services/circuitAssignment';
 
 // Lazy load QR scanner
 const QRScanner = lazy(() => import('../components/scanner/QRScanner'));
@@ -31,6 +32,8 @@ export default function CheckIn() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [newCircuitNumber, setNewCircuitNumber] = useState('1');
   const [isAddingCircuit, setIsAddingCircuit] = useState(false);
+  const [distributeCount, setDistributeCount] = useState('');
+  const [isDistributing, setIsDistributing] = useState(false);
 
   // Load initial data
   useEffect(() => {
@@ -46,6 +49,46 @@ export default function CheckIn() {
   // Only students enrolled in this exam. Check-in used to search the whole
   // database, so a student from another cohort could be checked into a circuit.
   const examCandidates = candidatesForExam(candidates, selectedExam?.id);
+
+  // Enrolled in the exam but not yet in any circuit
+  const assignedIds = new Set(checkIns.map((c) => c.candidateId));
+  const unassignedCount = examCandidates.filter((c) => !assignedIds.has(c.id)).length;
+
+  const handleDistribute = async () => {
+    if (!selectedExam || isDistributing) return;
+    const count = parseInt(distributeCount, 10);
+    if (!count || count < 1) return;
+
+    setIsDistributing(true);
+    try {
+      const r = await distributeIntoCircuits(selectedExam.id, count, getDeviceId());
+      await Promise.all([
+        loadCircuits(selectedExam.id),
+        loadAllCheckInsForExam(selectedExam.id),
+      ]);
+      const sizes = Object.entries(r.perCircuit)
+        .map(([n, size]) => `${n}: ${size}`)
+        .join(', ');
+      alert(
+        [
+          t('checkIn.distributed', '{{count}} students split across {{n}} circuits.', {
+            count: r.assigned,
+            n: count,
+          }),
+          sizes,
+          r.skipped > 0
+            ? t('checkIn.distributeSkipped', '{{count}} were already placed and were left alone.', {
+                count: r.skipped,
+              })
+            : '',
+        ]
+          .filter(Boolean)
+          .join('\n\n')
+      );
+    } finally {
+      setIsDistributing(false);
+    }
+  };
 
   // Load whatever belongs to the exam the URL points at
   useEffect(() => {
@@ -292,6 +335,45 @@ export default function CheckIn() {
               </button>
             </div>
           </div>
+
+          {/* Split the roster into circuits, for when the file did not say.
+              Only offered while somebody is still unassigned. */}
+          {unassignedCount > 0 && (
+            <div className="bg-white rounded-xl border border-blue-200 p-4">
+              <h3 className="font-semibold text-gray-900">
+                {t('checkIn.distributeTitle', 'Split students into circuits')}
+              </h3>
+              <p className="text-sm text-gray-600 mt-1 mb-3">
+                {t('checkIn.distributeHint', {
+                  defaultValue:
+                    '{{count}} students in this exam have no circuit. They will be split evenly in college-ID order; anyone already placed stays where they are.',
+                  count: unassignedCount,
+                })}
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={40}
+                  value={distributeCount}
+                  onChange={(e) => setDistributeCount(e.target.value)}
+                  className="w-24 border border-gray-300 rounded-lg px-3 py-2 text-center focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+                <span className="text-sm text-gray-600">
+                  {t('checkIn.circuitsWord', 'circuits')}
+                </span>
+                <button
+                  onClick={handleDistribute}
+                  disabled={isDistributing || !distributeCount.trim()}
+                  className="ml-auto bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                >
+                  {isDistributing
+                    ? t('common.loading', 'Working…')
+                    : t('checkIn.distribute', 'Split them')}
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Circuit Selection */}
           <div className="bg-white rounded-xl border border-gray-200 p-4">
