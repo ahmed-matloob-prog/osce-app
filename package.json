@@ -12,7 +12,8 @@
     "build:emulator": "tsc -b && vite build --mode emulator",
     "emulator": "firebase emulators:start --only firestore,auth --project osce-emulator",
     "serve:dist": "node tests/serve.mjs",
-    "test:sync": "node tests/sync-across-devices.mjs"
+    "test:sync": "node tests/sync-across-devices.mjs",
+    "test:device": "node tests/device-mode.mjs"
   },
   "dependencies": {
     "dexie": "^4.2.1",

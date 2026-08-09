@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { initSyncListeners } from './stores/syncStore';
+import { useDeviceStore, homeRouteFor, isRouteAllowed } from './stores/deviceStore';
 
 // Import i18n (must be before components that use it)
 import './i18n';
@@ -19,15 +20,39 @@ import CheckIn from './pages/CheckIn';
 // Layout
 import Layout from './components/ui/Layout';
 
+/**
+ * Keep a pinned device on its own screens.
+ *
+ * A rail, not a lock — see the note in deviceStore. It stops an examiner
+ * wandering into the roster while holding a tablet in one hand; it is not what
+ * keeps one stage's marks away from another stage's admin.
+ */
+function DeviceRouteGuard({ children }: { children: React.ReactNode }) {
+  const assignment = useDeviceStore((s) => s.assignment);
+  const { pathname } = useLocation();
+
+  if (isRouteAllowed(assignment, pathname)) return <>{children}</>;
+  return <Navigate to={homeRouteFor(assignment)} replace />;
+}
+
 function App() {
+  const reconcile = useDeviceStore((s) => s.reconcile);
+
   // Initialize sync listeners on mount
   useEffect(() => {
     initSyncListeners();
   }, []);
 
+  // A pinned circuit can lose a merge while the tablet is closed, so check on
+  // every start rather than only when the assignment is made.
+  useEffect(() => {
+    reconcile();
+  }, [reconcile]);
+
   return (
     <BrowserRouter>
       <Layout>
+        <DeviceRouteGuard>
         <Routes>
           {/* Main Routes */}
           <Route path="/" element={<Dashboard />} />
@@ -49,6 +74,7 @@ function App() {
           {/* 404 */}
           <Route path="*" element={<div className="p-6 text-center">Page not found</div>} />
         </Routes>
+        </DeviceRouteGuard>
       </Layout>
     </BrowserRouter>
   );

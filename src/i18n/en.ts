@@ -47,6 +47,34 @@ export default {
   },
 
   // Exam Session
+  device: {
+    title: 'This device',
+    intro:
+      'Give this tablet one job for the day. It will show only the screen it needs.',
+    station: 'Station',
+    checkInDesk: 'Check-in desk',
+    circuitN: 'Circuit {{number}}',
+    assign: 'Pin this device',
+    release: 'Release',
+    releaseTitle: 'Release this device',
+    releaseSubtitle: 'Enter the PIN set when it was pinned',
+    releaseFromHeader: 'Use Release in the blue bar at the top to hand this device back.',
+    pinnedDevice: 'Pinned device',
+    pinLabel: 'Release PIN',
+    pinPlaceholder: 'Release PIN (optional)',
+    pinHint: '4 to 6 digits. Without one, releasing the device takes a single tap.',
+    badPin: 'A PIN must be 4 to 6 digits.',
+    noCircuits:
+      'This exam has no circuits yet. Create them from the check-in screen first, then pin the tablets.',
+    notSecurity:
+      'A guard rail, not a lock: clearing the browser data on this device resets it.',
+    notReady: 'This station cannot start yet.',
+    missingExam: 'The exam it was pinned to is no longer on this device.',
+    missingCircuit: 'Its circuit is missing — the tablet may not have synced yet.',
+    missingStation: 'Its station is no longer part of the exam.',
+    notReadyHint: 'Sync this tablet, or release it and pin it again.',
+  },
+
   session: {
     setupTitle: 'Start Exam Session',
     selectExam: 'Select Exam',

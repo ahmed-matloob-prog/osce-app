@@ -121,7 +121,8 @@ export default function PinModal({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, pin, maxLength, minLength, onClose, handleSubmit]);
 
-  // Auto-submit when PIN reaches max length in verify mode
+  // Auto-submit at full length in verify mode, so a six-digit PIN needs no
+  // extra tap. Shorter PINs use the button above.
   useEffect(() => {
     if (mode === 'verify' && pin.length === maxLength) {
       handleSubmit();
@@ -224,22 +225,28 @@ export default function PinModal({
             </button>
           </div>
 
-          {/* Submit Button (for create/confirm mode) */}
-          {(mode === 'create' || mode === 'confirm') && (
-            <button
-              onClick={handleSubmit}
-              disabled={isLoading || pin.length < minLength}
-              className="w-full mt-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white py-3 rounded-xl font-semibold transition-colors flex items-center justify-center gap-2"
-            >
-              {isLoading ? (
-                <span className="animate-spin">↻</span>
-              ) : mode === 'create' ? (
-                t('pin.setPin', 'Set PIN')
-              ) : (
-                t('pin.confirm', 'Confirm')
-              )}
-            </button>
-          )}
+          {/* Submit.
+              Shown in verify mode too. It used to be hidden there, on the
+              assumption that the auto-submit below would carry it — but that
+              only fires at the maximum length, and a PIN may be as short as
+              four digits. Anyone who chose four or five could enter it and
+              then have no way to send it: no button, and Enter is no help on a
+              tablet with no keyboard. */}
+          <button
+            onClick={handleSubmit}
+            disabled={isLoading || pin.length < minLength}
+            className="w-full mt-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white py-3 rounded-xl font-semibold transition-colors flex items-center justify-center gap-2"
+          >
+            {isLoading ? (
+              <span className="animate-spin">↻</span>
+            ) : mode === 'create' ? (
+              t('pin.setPin', 'Set PIN')
+            ) : mode === 'confirm' ? (
+              t('pin.confirm', 'Confirm')
+            ) : (
+              t('pin.unlock', 'Unlock')
+            )}
+          </button>
         </div>
 
         {/* Footer */}

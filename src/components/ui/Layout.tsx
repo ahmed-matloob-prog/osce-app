@@ -1,6 +1,9 @@
+import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useSyncStore } from '../../stores/syncStore';
+import { useDeviceStore, homeRouteFor } from '../../stores/deviceStore';
+import PinModal from '../PinModal';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -10,17 +13,51 @@ export default function Layout({ children }: LayoutProps) {
   const { t } = useTranslation();
   const location = useLocation();
   const { isOnline, pendingCount } = useSyncStore();
+  const assignment = useDeviceStore((s) => s.assignment);
+  const release = useDeviceStore((s) => s.release);
+  const [releasing, setReleasing] = useState(false);
+
+  const isPinned = assignment.role !== 'admin';
 
   // Hide nav on active exam screen
   const hideNav = location.pathname.startsWith('/exam/active');
 
-  const navItems = [
+  const adminNav = [
     { path: '/', icon: '🏠', label: t('nav.dashboard') },
     { path: '/exams', icon: '📋', label: t('nav.exams') },
     { path: '/candidates', icon: '👥', label: t('nav.candidates') },
     { path: '/reports', icon: '📊', label: t('nav.reports') },
     { path: '/settings', icon: '⚙️', label: t('nav.settings') },
   ];
+
+  // A pinned device gets one destination. Anything else on the bar is either a
+  // wrong turn or a screen the guard will bounce them out of.
+  const navItems = isPinned
+    ? [
+        {
+          path: homeRouteFor(assignment),
+          icon: assignment.role === 'checkin' ? '✅' : '🩺',
+          label:
+            assignment.role === 'checkin' ? t('device.checkInDesk') : t('device.station'),
+        },
+      ]
+    : adminNav;
+
+  const stationLabel = [
+    assignment.examName,
+    assignment.circuitNumber !== undefined
+      ? t('device.circuitN', { number: assignment.circuitNumber })
+      : null,
+    assignment.stationName,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  const handleRelease = async (pin: string) => {
+    const ok = await release(pin);
+    if (ok) setReleasing(false);
+    return ok;
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -30,6 +67,37 @@ export default function Layout({ children }: LayoutProps) {
           {t('sync.offline')} - {t('sync.pendingSync', { count: pendingCount })}
         </div>
       )}
+
+      {/* What this device is, and the way back out of it. Kept off the scoring
+          screen, which has its own full-bleed layout and its own way back. */}
+      {isPinned && !hideNav && (
+        <div className="bg-blue-900 text-white px-4 py-2 flex items-center gap-3 text-sm md:ml-64">
+          <span aria-hidden>🔒</span>
+          <span className="font-medium truncate">
+            {stationLabel || t('device.pinnedDevice')}
+          </span>
+          {assignment.examinerName && (
+            <span className="text-blue-200 truncate hidden sm:inline">
+              {assignment.examinerName}
+            </span>
+          )}
+          <button
+            onClick={() => (assignment.pinHash ? setReleasing(true) : handleRelease(''))}
+            className="ml-auto shrink-0 text-blue-100 hover:text-white underline underline-offset-2"
+          >
+            {t('device.release')}
+          </button>
+        </div>
+      )}
+
+      <PinModal
+        isOpen={releasing}
+        onClose={() => setReleasing(false)}
+        onSubmit={handleRelease}
+        mode="verify"
+        title={t('device.releaseTitle')}
+        subtitle={t('device.releaseSubtitle')}
+      />
 
       {/* Main Content */}
       <main className="flex-1 pb-20 md:pb-0 md:ml-64">

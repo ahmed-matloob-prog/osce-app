@@ -14,6 +14,7 @@ import {
   BackupParseError,
   type BackupCounts,
 } from '../services/backupExporter';
+import DeviceModeCard from '../components/DeviceModeCard';
 import type { Candidate, ExamTemplate } from '../types';
 
 // QR Code Image component that loads async
@@ -218,6 +219,10 @@ export default function Settings() {
   return (
     <div className="p-4 md:p-6 max-w-2xl mx-auto">
       <h1 className="text-2xl font-bold text-gray-900 mb-6">{t('settings.title')}</h1>
+
+      {/* What this device is for — first, because on exam morning it is the
+          first thing done to each tablet. */}
+      <DeviceModeCard />
 
       {/* Language */}
       <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
