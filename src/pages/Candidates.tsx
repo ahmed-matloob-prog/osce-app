@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { useCandidateStore } from '../stores/candidateStore';
 import { useExamStore } from '../stores/examStore';
 import { candidatesForExam } from '../utils/qrUtils';
-import CandidateImportModal from '../components/import/CandidateImportModal';
+import CandidateImportModal, { type ImportRow } from '../components/import/CandidateImportModal';
+import { assignCircuitsFromRoster } from '../services/circuitAssignment';
 import type { Candidate } from '../types';
 
 export default function Candidates() {
@@ -49,8 +50,28 @@ export default function Candidates() {
     alert(lines.join('\n\n'));
   };
 
-  const handleImport = async (examId: string, candidatesToImport: Omit<Candidate, 'id'>[]) => {
-    const { added, enrolled, skipped } = await importCandidates(examId, candidatesToImport);
+  const handleImport = async (examId: string, rows: ImportRow[]) => {
+    const { added, enrolled, skipped } = await importCandidates(
+      examId,
+      rows.map((r) => r.candidate)
+    );
+
+    // Assigning circuits from the file is the whole point at 450 students:
+    // it replaces scanning every badge on exam morning. Done after the import
+    // so the students it refers to exist.
+    const withCircuit = rows.filter(
+      (r): r is { candidate: Omit<Candidate, 'id'>; circuit: number } => r.circuit !== undefined
+    );
+    const assignment = withCircuit.length
+      ? await assignCircuitsFromRoster(
+          examId,
+          withCircuit.map((r) => ({
+            candidateNumber: r.candidate.candidateNumber,
+            circuit: r.circuit,
+          })),
+          'roster import'
+        )
+      : null;
 
     // Say plainly what happened to every row. A silent "import successful"
     // after they were all skipped is how you find out on exam morning that
@@ -77,7 +98,35 @@ export default function Candidates() {
       );
     }
 
+    if (assignment) {
+      const parts = [
+        t('candidates.circuitsAssigned', {
+          count: assignment.assigned,
+          defaultValue: '{{count}} students assigned to circuits.',
+        }),
+      ];
+      if (assignment.circuitsCreated.length > 0) {
+        parts.push(
+          t('candidates.circuitsCreated', {
+            count: assignment.circuitsCreated.length,
+            list: assignment.circuitsCreated.join(', '),
+            defaultValue: 'Created {{count}} circuits: {{list}}',
+          })
+        );
+      }
+      if (assignment.alreadyAssigned.length > 0) {
+        parts.push(
+          t('candidates.circuitsAlready', {
+            count: assignment.alreadyAssigned.length,
+            defaultValue: '{{count}} were already assigned and were left where they are.',
+          })
+        );
+      }
+      lines.push(parts.join('\n'));
+    }
+
     alert(lines.join('\n\n'));
+    await loadCandidates();
     setShowImportModal(false);
   };
 

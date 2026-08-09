@@ -5,13 +5,20 @@ import { parseCandidatesFromFile } from '../../services/candidateParser';
 import { useExamStore } from '../../stores/examStore';
 import type { Candidate } from '../../types';
 
+export interface ImportRow {
+  candidate: Omit<Candidate, 'id'>;
+  /** Circuit from the file, when it carries a circuit column. */
+  circuit?: number;
+}
+
 interface CandidateImportModalProps {
-  onImport: (examId: string, candidates: Omit<Candidate, 'id'>[]) => void;
+  onImport: (examId: string, rows: ImportRow[]) => void;
   onClose: () => void;
 }
 
 interface ImportResult {
   candidate: Omit<Candidate, 'id'>;
+  circuit?: number;
   warnings: string[];
   selected: boolean;
 }
@@ -44,13 +51,16 @@ export default function CandidateImportModal({ onImport, onClose }: CandidateImp
   const downloadExcelTemplate = () => {
     // Required columns first, then the optional ones, so the shape of the
     // requirement is obvious from the sheet itself.
+    // Required columns first, then الدائرة — which is optional but does the
+    // work of assigning every student to a circuit, so the sample fills it in
+    // rather than leaving it to be discovered.
     const data = [
-      ['الرقم', 'الاسم', 'المرحلة', 'NameEn', 'المجموعة'],
-      ['2024001', 'أحمد محمد حسن', 'المرحلة الثانية', 'Ahmed M. Hassan', 'A'],
-      ['2024002', 'سارة علي عبدالله', 'المرحلة الثانية', 'Sara A. Abdullah', 'A'],
-      ['2024003', 'محمد عمر خالد', 'المرحلة الثانية', 'Mohammed O. Khalid', 'B'],
-      ['2024004', 'فاطمة خالد ابراهيم', 'المرحلة الثانية', 'Fatima K. Ibrahim', 'B'],
-      ['2024005', 'يوسف ابراهيم محمود', 'المرحلة الثانية', 'Youssef I. Mahmoud', 'A'],
+      ['الرقم', 'الاسم', 'المرحلة', 'الدائرة', 'NameEn', 'المجموعة'],
+      ['6003', 'أحمد محمد حسن', 'المرحلة الرابعة', 1, 'Ahmed M. Hassan', 'A'],
+      ['6015', 'سارة علي عبدالله', 'المرحلة الرابعة', 1, 'Sara A. Abdullah', 'A'],
+      ['6029', 'محمد عمر خالد', 'المرحلة الرابعة', 2, 'Mohammed O. Khalid', 'B'],
+      ['6037', 'فاطمة خالد ابراهيم', 'المرحلة الرابعة', 2, 'Fatima K. Ibrahim', 'B'],
+      ['6043', 'يوسف ابراهيم محمود', 'المرحلة الرابعة', 3, 'Youssef I. Mahmoud', 'A'],
     ];
 
     const ws = XLSX.utils.aoa_to_sheet(data);
@@ -59,6 +69,7 @@ export default function CandidateImportModal({ onImport, onClose }: CandidateImp
       { wch: 12 }, // الرقم
       { wch: 26 }, // الاسم
       { wch: 20 }, // المرحلة
+      { wch: 10 }, // الدائرة
       { wch: 22 }, // NameEn
       { wch: 12 }, // المجموعة
     ];
@@ -86,6 +97,7 @@ export default function CandidateImportModal({ onImport, onClose }: CandidateImp
 
       setResults(parsed.candidates.map(p => ({
         candidate: p.candidate,
+        circuit: p.circuit,
         warnings: p.warnings,
         selected: true,
       })));
@@ -108,14 +120,19 @@ export default function CandidateImportModal({ onImport, onClose }: CandidateImp
   };
 
   const handleImport = () => {
-    const selectedCandidates = results
+    const rows = results
       .filter(r => r.selected)
-      .map(r => r.candidate);
+      .map(r => ({ candidate: r.candidate, circuit: r.circuit }));
 
-    if (selectedCandidates.length > 0 && selectedExamId) {
-      onImport(selectedExamId, selectedCandidates);
+    if (rows.length > 0 && selectedExamId) {
+      onImport(selectedExamId, rows);
     }
   };
+
+  // Surfaced before importing, because a roster with no circuits means every
+  // student has to be assigned by hand later.
+  const withCircuit = results.filter(r => r.circuit !== undefined).length;
+  const circuitNumbers = [...new Set(results.map(r => r.circuit).filter((c): c is number => c !== undefined))].sort((a, b) => a - b);
 
   const selectedCount = results.filter(r => r.selected).length;
 
@@ -141,7 +158,7 @@ export default function CandidateImportModal({ onImport, onClose }: CandidateImp
               <div>
                 <div className="font-medium text-green-800">{t('candidates.downloadTemplate', 'تحميل قالب Excel')}</div>
                 <div className="text-sm text-green-600">
-                  {t('candidates.templateHint', 'مطلوب: الرقم، الاسم، المرحلة — اختياري: NameEn، المجموعة')}
+                  {t('candidates.templateHint', 'مطلوب: الرقم، الاسم، المرحلة — اختياري: الدائرة، NameEn، المجموعة')}
                 </div>
                 <div className="text-xs text-green-600 mt-1">
                   {t('candidates.templateFormatHint', 'احفظ الملف بصيغة Excel‏ (.xlsx) وليس CSV، حتى تُحفظ الأسماء العربية بشكل صحيح.')}
@@ -219,6 +236,36 @@ export default function CandidateImportModal({ onImport, onClose }: CandidateImp
               {errors.map((err, i) => (
                 <div key={i} className="text-sm text-red-600">{err}</div>
               ))}
+            </div>
+          )}
+
+          {/* What the file says about circuits, before anything is imported.
+              A roster with no circuit column means assigning 450 students by
+              hand later, which is worth knowing now rather than then. */}
+          {results.length > 0 && (
+            <div className={`mb-4 p-3 rounded-lg border text-sm ${
+              withCircuit === results.length
+                ? 'bg-green-50 border-green-200 text-green-800'
+                : 'bg-amber-50 border-amber-200 text-amber-800'
+            }`}>
+              {withCircuit === results.length ? (
+                <>
+                  {t('candidates.circuitsFound', {
+                    defaultValue: 'All {{count}} students have a circuit. {{n}} circuits will be created or reused: {{list}}',
+                    count: results.length,
+                    n: circuitNumbers.length,
+                    list: circuitNumbers.join(', '),
+                  })}
+                </>
+              ) : withCircuit === 0 ? (
+                t('candidates.noCircuitColumn', 'No circuit column in this file. Students will be imported without a circuit, and will need assigning before the exam.')
+              ) : (
+                t('candidates.someCircuits', {
+                  defaultValue: '{{withCircuit}} of {{total}} students have a circuit. The rest will need assigning.',
+                  withCircuit,
+                  total: results.length,
+                })
+              )}
             </div>
           )}
 

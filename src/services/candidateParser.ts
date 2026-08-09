@@ -3,6 +3,14 @@ import type { Candidate } from '../types';
 
 interface ParsedCandidate {
   candidate: Omit<Candidate, 'id'>;
+  /**
+   * Circuit number from the file, if it carries one.
+   *
+   * Kept beside the candidate rather than on it: a student is not in a circuit,
+   * they are in a circuit *for a given exam*, and the same person can sit two
+   * exams in different circuits.
+   */
+  circuit?: number;
   warnings: string[];
 }
 
@@ -47,6 +55,10 @@ function parseRows(rows: string[][]): ParseResult {
     nameLatin: latinNameCol,
     stage: findCol(['stage', 'المرحلة']),
     group: findCol(['group', 'المجموعة', 'فوج']),
+    // Optional. Present, it assigns students to circuits at import time,
+    // which is the difference between setting up 450 students at a desk and
+    // scanning 450 badges on exam morning.
+    circuit: findCol(['circuit', 'الدائرة', 'دائرة']),
   };
 
   // Required columns: college ID, Arabic name, stage.
@@ -115,7 +127,22 @@ function parseRows(rows: string[][]): ParseResult {
       }
     });
 
-    candidates.push({ candidate, warnings });
+    // A circuit that will not parse is reported rather than silently dropped:
+    // a student with no circuit is invisible to their examiner's default list.
+    let circuit: number | undefined;
+    if (colIndex.circuit >= 0) {
+      const raw = getCell(colIndex.circuit);
+      if (raw) {
+        const parsed = parseInt(raw, 10);
+        if (Number.isFinite(parsed) && parsed > 0) {
+          circuit = parsed;
+        } else {
+          warnings.push(`الدائرة غير صالحة: ${raw}`);
+        }
+      }
+    }
+
+    candidates.push({ candidate, circuit, warnings });
   }
 
   return { candidates, errors };
