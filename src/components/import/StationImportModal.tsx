@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { parseMultipleDocuments } from '../../services/wordParser';
 import { parseTextFileFromFile } from '../../services/textParser';
-import { parseCSVFileFromFile } from '../../services/csvParser';
+import { parseCSVFileFromFile, parseExcelStationsFromFile } from '../../services/csvParser';
 import type { Station } from '../../types';
 
 interface StationImportModalProps {
@@ -56,6 +56,16 @@ export default function StationImportModal({ onImport, onClose }: StationImportM
             warnings: p.warnings,
             selected: true,
           })));
+        } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+          // The picker has always offered Excel; nothing used to handle it,
+          // so choosing a workbook produced no stations and no error.
+          const parsed = await parseExcelStationsFromFile(file);
+          allResults.push(...parsed.map(p => ({
+            station: p.station,
+            rawText: '',
+            warnings: p.warnings,
+            selected: true,
+          })));
         } else if (fileName.endsWith('.docx')) {
           // Parse Word document
           const parsed = await parseMultipleDocuments(files);
@@ -64,6 +74,12 @@ export default function StationImportModal({ onImport, onClose }: StationImportM
         }
       }
 
+      if (allResults.length === 0) {
+        setError(
+          'No stations found in that file. Check it matches the expected format — ' +
+          'a .txt needs STATION_NAME: markers, a spreadsheet needs Station and Item columns.'
+        );
+      }
       setResults(allResults);
     } catch (err) {
       setError(`Failed to parse documents: ${err}`);

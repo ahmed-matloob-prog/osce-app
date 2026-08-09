@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
+import { decodeTextFile } from './fileEncoding';
 import type { Station, ChecklistItem, StationType, ScoringOption } from '../types';
 
 interface ParsedStation {
@@ -225,6 +226,8 @@ export function parseTextFile(content: string): ParsedStation[] {
  * Parse text file from File object
  */
 export async function parseTextFileFromFile(file: File): Promise<ParsedStation[]> {
-  const content = await file.text();
-  return parseTextFile(content);
+  // Not file.text(): a .txt written on an Arabic Windows machine is
+  // Windows-1256, and reading it as UTF-8 destroys every Arabic character
+  // while still reporting a successful import.
+  return parseTextFile(await decodeTextFile(file));
 }

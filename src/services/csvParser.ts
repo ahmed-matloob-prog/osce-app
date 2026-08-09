@@ -1,5 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
+import * as XLSX from 'xlsx';
 import type { Station, ChecklistItem, StationType, ScoringOption } from '../types';
+import { decodeTextFile } from './fileEncoding';
 
 interface ParsedStation {
   station: Partial<Station>;
@@ -118,7 +120,14 @@ function parseCSV(content: string): string[][] {
  * Parse CSV file to stations
  */
 export function parseCSVStations(content: string): ParsedStation[] {
-  const rows = parseCSV(content);
+  return parseStationRows(parseCSV(content));
+}
+
+/**
+ * Turn a grid of cells into stations. Shared by the CSV and Excel paths so
+ * the two cannot drift apart.
+ */
+export function parseStationRows(rows: string[][]): ParsedStation[] {
 
   if (rows.length < 2) {
     return [{ station: {}, warnings: ['CSV file is empty or has no data rows'] }];
@@ -284,6 +293,25 @@ export function parseCSVStations(content: string): ParsedStation[] {
  * Parse CSV file from File object
  */
 export async function parseCSVFileFromFile(file: File): Promise<ParsedStation[]> {
-  const content = await file.text();
-  return parseCSVStations(content);
+  // Decoded rather than assumed UTF-8 — see fileEncoding.
+  return parseCSVStations(await decodeTextFile(file));
+}
+
+/**
+ * Parse stations from an Excel workbook.
+ *
+ * The file picker has always offered .xlsx and .xls, but nothing handled
+ * them: choosing one produced no stations and no error at all.
+ */
+export async function parseExcelStationsFromFile(file: File): Promise<ParsedStation[]> {
+  const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const rows: string[][] = XLSX.utils.sheet_to_json(sheet, {
+    header: 1,
+    // Cells come back as their displayed text, so a station number formatted
+    // in Excel arrives as it looks rather than as a raw float.
+    raw: false,
+    defval: '',
+  });
+  return parseStationRows(rows);
 }
