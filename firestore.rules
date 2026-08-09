@@ -75,11 +75,22 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Circuit assignments made at check-in.
+    // Circuits — which examiners and which students belong to each parallel
+    // run of the exam. Deleted softly like everything else, so `delete` stays
+    // shut: a removed row would be re-created by the next device to sync.
+    match /circuits/{circuitId} {
+      allow read: if signedIn();
+      allow create, update: if signedIn();
+      allow delete: if false;
+    }
+
+    // Circuit assignments made at check-in. Soft-deleted, same as circuits —
+    // an undone check-in travels as a tombstone, so nothing needs to remove
+    // the document and nothing may.
     match /checkIns/{checkInId} {
       allow read: if signedIn();
       allow create, update: if signedIn();
-      allow delete: if signedIn();
+      allow delete: if false;
     }
 
     // Exam results. Write-once: a mark can be created and can have its sync

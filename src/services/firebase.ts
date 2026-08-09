@@ -2,9 +2,10 @@ import { initializeApp, type FirebaseApp } from 'firebase/app';
 import {
   getFirestore,
   enableIndexedDbPersistence,
+  connectFirestoreEmulator,
   type Firestore,
 } from 'firebase/firestore';
-import { getAuth, signInAnonymously, type Auth } from 'firebase/auth';
+import { getAuth, signInAnonymously, connectAuthEmulator, type Auth } from 'firebase/auth';
 
 // Firebase configuration
 // Replace these values with your Firebase project config
@@ -62,6 +63,14 @@ export async function initializeFirebase(): Promise<{
     app = initializeApp(firebaseConfig);
     firestore = getFirestore(app);
 
+    // Local Firestore emulator, for exercising sync without touching a real
+    // project. Sync is the one area that cannot be tested offline, and testing
+    // it against production is how test data reached the live database before.
+    if (import.meta.env.VITE_FIREBASE_EMULATOR === '1') {
+      connectFirestoreEmulator(firestore, '127.0.0.1', 8080);
+      console.info('Firestore: using local emulator on 127.0.0.1:8080');
+    }
+
     // Enable offline persistence for Firestore
     try {
       await enableIndexedDbPersistence(firestore);
@@ -82,6 +91,9 @@ export async function initializeFirebase(): Promise<{
     }
 
     auth = getAuth(app);
+    if (import.meta.env.VITE_FIREBASE_EMULATOR === '1') {
+      connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+    }
     await ensureSignedIn();
 
     console.log('Firebase initialized successfully');

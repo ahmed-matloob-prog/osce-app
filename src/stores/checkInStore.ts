@@ -46,7 +46,7 @@ export const useCheckInStore = create<CheckInState>((set, get) => ({
   loadAllCheckInsForExam: async (examId: string) => {
     set({ isLoading: true });
     try {
-      const checkIns = await db.checkIns.where('examId').equals(examId).toArray();
+      const checkIns = (await db.checkIns.where('examId').equals(examId).toArray()).filter((c) => !c.deleted);
       set({ checkIns, isLoading: false });
     } catch (error) {
       console.error('Failed to load check-ins:', error);
@@ -89,6 +89,7 @@ export const useCheckInStore = create<CheckInState>((set, get) => ({
         checkedInBy: checkedInBy || getDeviceId(),
         stationsCompleted: [],
         synced: false,
+        updatedAt: new Date(),
       };
 
       await db.checkIns.add(checkIn);
@@ -106,9 +107,17 @@ export const useCheckInStore = create<CheckInState>((set, get) => ({
   },
 
   // Undo a check-in (remove it)
+  // Soft, because check-ins sync between devices: removing the row would let
+  // any other device push its copy back on the next run.
   undoCheckIn: async (checkInId: string) => {
     try {
-      await db.checkIns.delete(checkInId);
+      const now = new Date();
+      await db.checkIns.update(checkInId, {
+        deleted: true,
+        deletedAt: now,
+        updatedAt: now,
+        synced: false,
+      });
       set((state) => ({
         checkIns: state.checkIns.filter((c) => c.id !== checkInId),
       }));

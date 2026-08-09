@@ -140,7 +140,7 @@ export const useExamStore = create<ExamState>((set, get) => ({
 
   // Load circuits for an exam
   loadCircuits: async (examId) => {
-    const circuits = await db.circuits.where('examId').equals(examId).toArray();
+    const circuits = (await db.circuits.where('examId').equals(examId).toArray()).filter((c) => !c.deleted);
     set({ circuits });
   },
 
@@ -149,6 +149,7 @@ export const useExamStore = create<ExamState>((set, get) => ({
     const circuit: Circuit = {
       ...circuitData,
       id: uuidv4(),
+      updatedAt: new Date(),
     };
     await db.circuits.add(circuit);
     set((state) => ({ circuits: [...state.circuits, circuit] }));
@@ -157,7 +158,7 @@ export const useExamStore = create<ExamState>((set, get) => ({
 
   // Update a circuit
   updateCircuit: async (id, updates) => {
-    await db.circuits.update(id, updates);
+    await db.circuits.update(id, { ...updates, updatedAt: new Date() });
     set((state) => ({
       circuits: state.circuits.map((c) =>
         c.id === id ? { ...c, ...updates } : c
@@ -167,7 +168,8 @@ export const useExamStore = create<ExamState>((set, get) => ({
 
   // Delete a circuit
   deleteCircuit: async (id) => {
-    await db.circuits.delete(id);
+    const now = new Date();
+    await db.circuits.update(id, { deleted: true, deletedAt: now, updatedAt: now });
     set((state) => ({
       circuits: state.circuits.filter((c) => c.id !== id),
     }));

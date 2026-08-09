@@ -43,8 +43,9 @@ export type RemoveCircuitResult =
  * those marks pointing at nothing — the same reason the Firestore rules will
  * not let a device delete an exam template.
  *
- * A hard delete is safe here: circuits and check-ins are local to a device and
- * are not synced, so nothing can push a deleted circuit back.
+ * Soft, because circuits sync between devices now: removing the row would
+ * leave every other device free to push its copy back, exactly as deleting an
+ * exam used to.
  */
 export async function removeCircuit(circuitId: string): Promise<RemoveCircuitResult> {
   const evaluations = await db.evaluations.filter((e) => e.circuitId === circuitId).count();
@@ -52,11 +53,20 @@ export async function removeCircuit(circuitId: string): Promise<RemoveCircuitRes
     return { status: 'has-marks', evaluations };
   }
 
-  const checkIns = await db.checkIns.filter((c) => c.circuitId === circuitId).toArray();
+  const now = new Date();
+  const checkIns = await db.checkIns
+    .filter((c) => c.circuitId === circuitId && !c.deleted)
+    .toArray();
   if (checkIns.length > 0) {
-    await db.checkIns.bulkDelete(checkIns.map((c) => c.id));
+    await db.checkIns.bulkPut(
+      checkIns.map((c) => ({ ...c, deleted: true, deletedAt: now, updatedAt: now, synced: false }))
+    );
   }
-  await db.circuits.delete(circuitId);
+  await db.circuits.update(circuitId, {
+    deleted: true,
+    deletedAt: now,
+    updatedAt: now,
+  });
 
   return { status: 'removed', unassigned: checkIns.length };
 }
@@ -101,7 +111,7 @@ export async function distributeIntoCircuits(
     (c) => !c.deleted && c.examIds?.includes(examId)
   );
 
-  const existingCheckIns = await db.checkIns.where('examId').equals(examId).toArray();
+  const existingCheckIns = (await db.checkIns.where('examId').equals(examId).toArray()).filter((c) => !c.deleted);
   const alreadyPlaced = new Set(existingCheckIns.map((c) => c.candidateId));
 
   const toPlace = enrolled
@@ -114,7 +124,7 @@ export async function distributeIntoCircuits(
   if (toPlace.length === 0) return result;
 
   // Create circuits 1..N that do not exist yet
-  const circuits = await db.circuits.where('examId').equals(examId).toArray();
+  const circuits = (await db.circuits.where('examId').equals(examId).toArray()).filter((c) => !c.deleted);
   const circuitByNumber = new Map(circuits.map((c) => [c.circuitNumber, c]));
   const newCircuits: Circuit[] = [];
   for (let n = 1; n <= circuitCount; n++) {
@@ -190,10 +200,10 @@ export async function assignCircuitsFromRoster(
       .map((c) => [normalizeCandidateNumber(c.candidateNumber), c])
   );
 
-  const circuits = await db.circuits.where('examId').equals(examId).toArray();
+  const circuits = (await db.circuits.where('examId').equals(examId).toArray()).filter((c) => !c.deleted);
   const circuitByNumber = new Map(circuits.map((c) => [c.circuitNumber, c]));
 
-  const existingCheckIns = await db.checkIns.where('examId').equals(examId).toArray();
+  const existingCheckIns = (await db.checkIns.where('examId').equals(examId).toArray()).filter((c) => !c.deleted);
   const assignedCandidateIds = new Set(existingCheckIns.map((c) => c.candidateId));
 
   // Create any circuit the file refers to but the exam does not have yet, so

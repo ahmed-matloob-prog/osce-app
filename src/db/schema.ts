@@ -262,10 +262,10 @@ export async function getCheckInsForCircuit(
   examId: string,
   circuitId: string
 ): Promise<CheckIn[]> {
-  return db.checkIns
+  return (await db.checkIns
     .where('[examId+circuitId]')
     .equals([examId, circuitId])
-    .toArray();
+    .toArray()).filter((c) => !c.deleted);
 }
 
 // Get check-in by candidate number for an exam
@@ -273,10 +273,10 @@ export async function getCheckInByCandidate(
   examId: string,
   candidateNumber: string
 ): Promise<CheckIn | undefined> {
-  return db.checkIns
+  return (await db.checkIns
     .where('[examId+candidateNumber]')
     .equals([examId, candidateNumber])
-    .first();
+    .toArray()).find((c) => !c.deleted);
 }
 
 // Check if candidate is already checked in to any circuit
@@ -284,10 +284,10 @@ export async function isAlreadyCheckedIn(
   examId: string,
   candidateId: string
 ): Promise<CheckIn | undefined> {
-  return db.checkIns
+  return (await db.checkIns
     .where('[examId+candidateId]')
     .equals([examId, candidateId])
-    .first();
+    .toArray()).find((c) => !c.deleted);
 }
 
 // Get unsynced check-ins (same boolean-index caveat as above)

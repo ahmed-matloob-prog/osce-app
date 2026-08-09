@@ -121,6 +121,15 @@ export interface Candidate {
   registeredBy?: string;
   registeredWhere?: 'station' | 'check-in';
 
+  /**
+   * Last local change, used by sync to decide which device's copy wins.
+   *
+   * Enrolment is merged rather than overwritten — see mergeCloudCandidates —
+   * because two devices enrolling the same student in two different exams are
+   * both right, and last-write-wins would throw one of them away.
+   */
+  updatedAt?: Date;
+
   /** Soft delete — see the note on ExamTemplate. */
   deleted?: boolean;
   deletedAt?: Date;
@@ -142,6 +151,15 @@ export interface Circuit {
   nameAr?: string;
   examiners: CircuitExaminer[];
   candidateIds: string[];
+
+  /**
+   * Circuits sync between devices, so the same rules as exams apply: a
+   * removal has to travel as a change, and the merge needs a timestamp to
+   * decide which version is newer.
+   */
+  updatedAt?: Date;
+  deleted?: boolean;
+  deletedAt?: Date;
 }
 
 // Check-in record for circuit assignment
@@ -157,6 +175,11 @@ export interface CheckIn {
   stationsCompleted: string[]; // Station IDs that have been completed
   synced: boolean;
   syncedAt?: Date;
+
+  /** See the note on Circuit — check-ins sync too. */
+  updatedAt?: Date;
+  deleted?: boolean;
+  deletedAt?: Date;
 }
 
 // How the examiner established who they were scoring.

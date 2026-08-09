@@ -72,6 +72,7 @@ export const useCandidateStore = create<CandidateState>((set) => ({
       ...candidateData,
       candidateNumber: normalizeCandidateNumber(candidateData.candidateNumber),
       id: uuidv4(),
+      updatedAt: new Date(),
     };
     // The unique index on candidateNumber makes this throw on a collision
     // rather than quietly creating a second record for the same student.
@@ -82,10 +83,11 @@ export const useCandidateStore = create<CandidateState>((set) => ({
 
   // Update a candidate
   updateCandidate: async (id, updates) => {
-    await db.candidates.update(id, updates);
+    const stamped = { ...updates, updatedAt: new Date() };
+    await db.candidates.update(id, stamped);
     set((state) => ({
       candidates: state.candidates.map((c) =>
-        c.id === id ? { ...c, ...updates } : c
+        c.id === id ? { ...c, ...stamped } : c
       ),
     }));
   },
@@ -94,7 +96,8 @@ export const useCandidateStore = create<CandidateState>((set) => ({
   // Soft delete, so the removal syncs up instead of the record being pushed
   // back the next time this device syncs. See the note on ExamTemplate.
   deleteCandidate: async (id) => {
-    await db.candidates.update(id, { deleted: true, deletedAt: new Date() });
+    const now = new Date();
+    await db.candidates.update(id, { deleted: true, deletedAt: now, updatedAt: now });
     set((state) => ({
       candidates: state.candidates.filter((c) => c.id !== id),
     }));
@@ -134,7 +137,13 @@ export const useCandidateStore = create<CandidateState>((set) => ({
 
       const already = byNumber.get(candidateNumber);
       if (!already) {
-        toAdd.push({ ...data, candidateNumber, examIds: [examId], id: uuidv4() });
+        toAdd.push({
+          ...data,
+          candidateNumber,
+          examIds: [examId],
+          id: uuidv4(),
+          updatedAt: new Date(),
+        });
         continue;
       }
 
@@ -147,6 +156,7 @@ export const useCandidateStore = create<CandidateState>((set) => ({
           candidateNumber,
           deleted: false,
           deletedAt: undefined,
+          updatedAt: new Date(),
           examIds: [...new Set([...(already.examIds ?? []), examId])],
         });
         continue;
@@ -157,7 +167,11 @@ export const useCandidateStore = create<CandidateState>((set) => ({
         continue;
       }
 
-      toEnrol.push({ ...already, examIds: [...(already.examIds ?? []), examId] });
+      toEnrol.push({
+        ...already,
+        examIds: [...(already.examIds ?? []), examId],
+        updatedAt: new Date(),
+      });
     }
 
     if (toAdd.length > 0) await db.candidates.bulkAdd(toAdd);
@@ -193,6 +207,7 @@ export const useCandidateStore = create<CandidateState>((set) => ({
           ...existing,
           deleted: false,
           deletedAt: undefined,
+          updatedAt: new Date(),
           examIds: [...new Set([...(existing.examIds ?? []), input.examId])],
         };
         await db.candidates.put(enrolled);
@@ -215,6 +230,7 @@ export const useCandidateStore = create<CandidateState>((set) => ({
       registeredAt: new Date(),
       registeredBy: input.registeredBy,
       registeredWhere: input.registeredWhere,
+      updatedAt: new Date(),
     };
 
     await db.candidates.add(candidate);
@@ -224,10 +240,11 @@ export const useCandidateStore = create<CandidateState>((set) => ({
 
   // Admin has checked the college ID against the college's records
   confirmProvisional: async (id) => {
-    await db.candidates.update(id, { provisional: false });
+    const updatedAt = new Date();
+    await db.candidates.update(id, { provisional: false, updatedAt });
     set((state) => ({
       candidates: state.candidates.map((c) =>
-        c.id === id ? { ...c, provisional: false } : c
+        c.id === id ? { ...c, provisional: false, updatedAt } : c
       ),
     }));
   },
@@ -258,7 +275,12 @@ export const useCandidateStore = create<CandidateState>((set) => ({
         continue;
       }
       liveNumbers.add(number);
-      restored.push({ ...candidate, deleted: false, deletedAt: undefined });
+      restored.push({
+        ...candidate,
+        deleted: false,
+        deletedAt: undefined,
+        updatedAt: new Date(),
+      });
     }
 
     if (restored.length > 0) await db.candidates.bulkPut(restored);
@@ -284,7 +306,7 @@ export const useCandidateStore = create<CandidateState>((set) => ({
   clearAll: async () => {
     const all = await db.candidates.toArray();
     await db.candidates.bulkPut(
-      all.map((c) => ({ ...c, deleted: true, deletedAt: new Date() }))
+      all.map((c) => ({ ...c, deleted: true, deletedAt: new Date(), updatedAt: new Date() }))
     );
     set({ candidates: [] });
   },
