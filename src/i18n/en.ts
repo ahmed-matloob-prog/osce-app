@@ -129,6 +129,11 @@ export default {
 
   // Active Exam
   exam: {
+    alreadyScoredTitle: 'Already scored at this station',
+    alreadyScoredBody: '{{score}}/{{max}} by {{examiner}}, {{time}}',
+    alreadyScoredHint:
+      'Scoring again records a new mark that replaces this one. The old mark is kept and both appear in the report.',
+    scoreAgain: 'Score again',
     scenario: 'Scenario',
     tasks: 'Tasks',
     checklist: 'Checklist',
@@ -244,6 +249,9 @@ export default {
 
   // Reports
   reports: {
+    correctionTitle: '{{count}} mark(s) were re-scored deliberately',
+    correctionBody:
+      'The examiner was shown the earlier mark and scored again, so the later one is the intended result. Both are kept.',
     pulling: 'Fetching results from other tablets...',
     refresh: 'Refresh',
     offlineResults:

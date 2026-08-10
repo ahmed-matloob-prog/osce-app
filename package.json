@@ -16,7 +16,8 @@
     "test:device": "node tests/device-mode.mjs",
     "test:gate": "node tests/role-gate.mjs",
     "test:reports": "node tests/reports.mjs",
-    "test:pwa": "node tests/pwa-update.mjs"
+    "test:pwa": "node tests/pwa-update.mjs",
+    "test:duplicate": "node tests/duplicate-scoring.mjs"
   },
   "dependencies": {
     "dexie": "^4.2.1",

@@ -10,11 +10,29 @@ export const B_UUID_FOR_2001 = 'ffffffff-0000-0000-0000-000000000001';
 export const exam = {
   id: EXAM_ID, name: 'Sync Test Exam', description: 'emulator',
   stations: [{
-    id: 'st-1', name: 'Station 1', nameAr: '', description: '', descriptionAr: '',
-    timeLimit: 300, order: 1,
+    id: 'st-1', name: 'Station 1', nameAr: '', stationNumber: 1,
+    stationType: 'history', scenario: '', scenarioAr: '', tasks: [], tasksAr: [],
+    globalRatingEnabled: false, timeLimit: 300,
+    // Full shape, including scoringOptions — the scoring screen renders one
+    // button per option and throws on an item without them.
     checklistItems: [
-      { id: 'it-1', text: 'Greets patient', textAr: '', maxScore: 2, order: 1 },
-      { id: 'it-2', text: 'Washes hands',  textAr: '', maxScore: 2, order: 2 },
+      {
+        id: 'it-1', text: 'Greets patient', textAr: '', maxScore: 2,
+        position: 'before_findings',
+        scoringOptions: [
+          { value: 0, label: 'Not done' },
+          { value: 1, label: 'Partial' },
+          { value: 2, label: 'Done' },
+        ],
+      },
+      {
+        id: 'it-2', text: 'Washes hands', textAr: '', maxScore: 2,
+        position: 'before_findings',
+        scoringOptions: [
+          { value: 0, label: 'Not done' },
+          { value: 2, label: 'Done' },
+        ],
+      },
     ],
   }],
   pinEnabled: false, isLocked: false,

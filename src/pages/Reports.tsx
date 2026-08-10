@@ -133,11 +133,25 @@ export default function Reports() {
     }
     return [...byStudentStation.values()]
       .filter((group) => group.length > 1)
-      .map((group) => ({
-        candidate: examinedCandidates.find((c) => c.id === group[0].candidateId),
-        marks: group.sort((a, b) => a.startTime.getTime() - b.startTime.getTime()),
-      }));
+      .map((group) => {
+        const marks = group.sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+        // Did the examiner know? A mark that names the one before it was
+        // entered by someone who had just been shown that mark and chose to
+        // score again — a correction. A pair where neither names the other is a
+        // duplicate nobody saw, and only a person can decide which stands.
+        const superseded = new Set(marks.map((m) => m.supersedes).filter(Boolean));
+        const deliberate = marks.some((m) => m.supersedes);
+        return {
+          candidate: examinedCandidates.find((c) => c.id === marks[0].candidateId),
+          marks,
+          deliberate,
+          replaced: superseded,
+        };
+      });
   })();
+
+  const unnoticedDuplicates = duplicateMarks.filter((d) => !d.deliberate);
+  const corrections = duplicateMarks.filter((d) => d.deliberate);
 
   // Get evaluations for selected candidate
   const candidateEvaluations = evaluations.filter(
@@ -309,37 +323,67 @@ export default function Reports() {
 
       {/* One student, one station, two marks. Which counts is not the app's
           decision to make, but hiding it is not an option either. */}
-      {duplicateMarks.length > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
-          <p className="text-sm font-medium text-red-900">
-            {t('reports.duplicateTitle', { count: duplicateMarks.length })}
-          </p>
-          <p className="text-sm text-red-900 mt-1">{t('reports.duplicateBody')}</p>
-          <ul className="mt-3 space-y-2 text-sm text-red-900">
-            {duplicateMarks.map(({ candidate, marks }) => (
-              <li key={marks[0].id}>
-                <span className="font-medium">
-                  {candidate?.candidateNumber ?? t('reports.unknownStudent')}
-                </span>
-                {candidate?.name ? ` — ${candidate.name}` : ''}
-                <span className="block text-red-800">
-                  {selectedExam?.stations.find((st) => st.id === marks[0].stationId)?.name ??
-                    marks[0].stationId}
-                  {': '}
-                  {marks
-                    .map(
-                      (m) =>
-                        `${m.totalScore}/${m.maxPossibleScore} (${m.examinerName}, ${new Date(
-                          m.startTime
-                        ).toLocaleTimeString()})`
-                    )
-                    .join('  ·  ')}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      {duplicateMarks.length > 0 &&
+        (() => {
+          const stationName = (id: string) =>
+            selectedExam?.stations.find((st) => st.id === id)?.name ?? id;
+
+          // Tailwind only keeps classes it can see written out, so the colour
+          // is passed as a whole class name rather than built from a fragment.
+          const list = (group: typeof duplicateMarks, toneClass: string) => (
+            <ul className={`mt-3 space-y-2 text-sm ${toneClass}`}>
+              {group.map(({ candidate, marks, replaced }) => (
+                <li key={marks[0].id}>
+                  <span className="font-medium">
+                    {candidate?.candidateNumber ?? t('reports.unknownStudent')}
+                  </span>
+                  {candidate?.name ? ` — ${candidate.name}` : ''}
+                  <span className="block">
+                    {stationName(marks[0].stationId)}:{' '}
+                    {marks.map((m, i) => (
+                      <span
+                        key={m.id}
+                        className={replaced.has(m.id) ? 'line-through opacity-60' : 'font-medium'}
+                      >
+                        {i > 0 ? '  →  ' : ''}
+                        {m.totalScore}/{m.maxPossibleScore} ({m.examinerName},{' '}
+                        {new Date(m.startTime).toLocaleTimeString()})
+                      </span>
+                    ))}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          );
+
+          return (
+            <>
+              {/* Nobody saw these happen. Someone has to decide. */}
+              {unnoticedDuplicates.length > 0 && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
+                  <p className="text-sm font-medium text-red-900">
+                    {t('reports.duplicateTitle', { count: unnoticedDuplicates.length })}
+                  </p>
+                  <p className="text-sm text-red-900 mt-1">{t('reports.duplicateBody')}</p>
+                  {list(unnoticedDuplicates, 'text-red-900')}
+                </div>
+              )}
+
+              {/* The examiner was shown the earlier mark and scored again, so
+                  the later one is what they meant. Still listed — a correction
+                  is a thing a results committee should be able to see. */}
+              {corrections.length > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
+                  <p className="text-sm font-medium text-amber-900">
+                    {t('reports.correctionTitle', { count: corrections.length })}
+                  </p>
+                  <p className="text-sm text-amber-900 mt-1">{t('reports.correctionBody')}</p>
+                  {list(corrections, 'text-amber-900')}
+                </div>
+              )}
+            </>
+          );
+        })()}
 
       {/* Marks whose student is not on this device. The report would be
           incomplete, and that has to be said before anybody publishes it. */}

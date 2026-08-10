@@ -47,7 +47,8 @@ interface ExamState {
     candidateId: string,
     station: Station,
     identifiedBy: IdentificationMethod,
-    scoredOutsideCircuit?: boolean
+    scoredOutsideCircuit?: boolean,
+    supersedes?: string
   ) => void;
   updateScore: (itemId: string, score: number) => void;
   setGlobalRating: (rating: number) => void;
@@ -209,7 +210,7 @@ export const useExamStore = create<ExamState>((set, get) => ({
   },
 
   // Start evaluating a candidate
-  startEvaluation: (candidateId, station, identifiedBy, scoredOutsideCircuit) => {
+  startEvaluation: (candidateId, station, identifiedBy, scoredOutsideCircuit, supersedes) => {
     const { currentSession } = get();
     if (!currentSession) return;
 
@@ -233,6 +234,7 @@ export const useExamStore = create<ExamState>((set, get) => ({
       examinerName: currentSession.examinerName,
       identifiedBy,
       scoredOutsideCircuit: scoredOutsideCircuit || undefined,
+      supersedes,
       scores,
       notes: '',
       startTime: new Date(),

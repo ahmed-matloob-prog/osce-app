@@ -253,6 +253,20 @@ export interface Evaluation {
    * admin can review those marks rather than never learning of them.
    */
   scoredOutsideCircuit?: boolean;
+
+  /**
+   * The mark this one was entered to replace.
+   *
+   * Set when the examiner was shown an existing mark for this student at this
+   * station and chose to score again anyway. A mark is write-once in the
+   * security rules and can never be overwritten, so correcting one means adding
+   * another — and without this field the result is two marks with nothing to
+   * say which was meant.
+   *
+   * Its absence is just as meaningful: two marks where neither supersedes the
+   * other is a duplicate nobody noticed, and needs a person to decide.
+   */
+  supersedes?: string;
   scores: ItemScore[];
   globalRating?: number; // 0-4
   notes: string;

@@ -9,6 +9,8 @@ import type { ChecklistItem, Candidate, IdentificationMethod } from '../types';
 import { GLOBAL_RATING_LABELS, IDENTIFICATION_METHOD_LABELS } from '../types';
 import { validateQR, findCandidateByNumber, candidatesForExam } from '../utils/qrUtils';
 import { downloadBackup } from '../services/backupExporter';
+import { db } from '../db/schema';
+import type { Evaluation } from '../types';
 
 /** Where a student sits relative to the circuit this station belongs to. */
 type CircuitStatus =
@@ -56,6 +58,8 @@ export default function ActiveExam() {
   } | null>(null);
   const [showManualEntry, setShowManualEntry] = useState(false);
   const [showAllCandidates, setShowAllCandidates] = useState(false);
+  /** Marks already recorded at this station, so the same student is not scored twice by accident. */
+  const [marksAtThisStation, setMarksAtThisStation] = useState<Evaluation[]>([]);
 
   // Load data on mount
   useEffect(() => {
@@ -70,6 +74,40 @@ export default function ActiveExam() {
     loadCircuits(currentSession.examId);
     loadAllCheckInsForExam(currentSession.examId);
   }, [currentSession?.examId, loadCircuits, loadAllCheckInsForExam]);
+
+  // What has already been scored at this station.
+  //
+  // Reloaded whenever a mark is submitted, because the commonest duplicate of
+  // all is the same examiner scanning the same student twice in a row.
+  //
+  // This device's own database only. A duplicate created on another tablet is
+  // invisible here until the two have synced, and the hall has no internet — so
+  // this catches the common case at the moment it happens, and the report
+  // catches the rest before anything is published.
+  useEffect(() => {
+    if (!currentSession?.examId || !currentSession?.stationId) return;
+    let cancelled = false;
+    db.evaluations
+      .where('examId')
+      .equals(currentSession.examId)
+      .toArray()
+      .then((all) => {
+        if (cancelled) return;
+        setMarksAtThisStation(all.filter((e) => e.stationId === currentSession.stationId));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentSession?.examId, currentSession?.stationId, currentEvaluation]);
+
+  /** The most recent mark this student already has at this station, if any. */
+  const existingMarkFor = useCallback(
+    (candidate: Candidate): Evaluation | undefined =>
+      marksAtThisStation
+        .filter((e) => e.candidateId === candidate.id)
+        .sort((a, b) => b.startTime.getTime() - a.startTime.getTime())[0],
+    [marksAtThisStation]
+  );
 
   // Get current exam and station
   const currentExam = exams.find((e) => e.id === currentSession?.examId);
@@ -155,13 +193,19 @@ export default function ActiveExam() {
     const status = circuitStatusFor(candidate);
     const outsideCircuit = status.kind === 'other-circuit' || status.kind === 'not-checked-in';
 
+    // If this student already has a mark here, the examiner has just been shown
+    // it and chosen to score anyway. Record which mark they meant to replace —
+    // the old one cannot be edited, so this is the only way the intention
+    // survives to the results.
+    const existing = existingMarkFor(candidate);
+
     setSelectedCandidateId(candidate.id);
-    startEvaluation(candidate.id, currentStation, method, outsideCircuit);
+    startEvaluation(candidate.id, currentStation, method, outsideCircuit, existing?.id);
     setPendingCandidate(null);
     setShowCandidateSelector(false);
     setSearchQuery('');
     setScanError(null);
-  }, [pendingCandidate, currentStation, startEvaluation, circuitStatusFor]);
+  }, [pendingCandidate, currentStation, startEvaluation, circuitStatusFor, existingMarkFor]);
 
   // Typing a full college ID resolves straight to one student; anything else
   // falls through to filtering the roster by name.
@@ -474,6 +518,33 @@ export default function ActiveExam() {
               );
             })()}
 
+            {/* Already scored here.
+                Shown before scoring starts, not after, so the examiner finds
+                out before spending three minutes on it. Never blocking: a mark
+                is write-once, so scoring again is the only way to correct one,
+                and refusing would leave an examiner with a student in front of
+                them and no remedy. */}
+            {(() => {
+              const existing = existingMarkFor(pendingCandidate.candidate);
+              if (!existing) return null;
+              return (
+                <div className="mb-4 p-3 rounded-xl bg-amber-50 border-2 border-amber-300 text-amber-900 text-sm">
+                  <div className="font-semibold mb-1">
+                    {t('exam.alreadyScoredTitle')}
+                  </div>
+                  <div>
+                    {t('exam.alreadyScoredBody', {
+                      score: existing.totalScore,
+                      max: existing.maxPossibleScore,
+                      examiner: existing.examinerName,
+                      time: existing.startTime.toLocaleTimeString(),
+                    })}
+                  </div>
+                  <div className="mt-2 text-xs">{t('exam.alreadyScoredHint')}</div>
+                </div>
+              );
+            })()}
+
             <div className="flex gap-3">
               <button
                 onClick={() => setPendingCandidate(null)}
@@ -484,18 +555,23 @@ export default function ActiveExam() {
               {(() => {
                 const status = circuitStatusFor(pendingCandidate.candidate);
                 const flagged = status.kind === 'other-circuit' || status.kind === 'not-checked-in';
+                const alreadyScored = Boolean(existingMarkFor(pendingCandidate.candidate));
                 return (
                   <button
                     onClick={confirmCandidate}
                     className={`flex-1 py-3 rounded-xl font-semibold text-white transition-colors ${
                       flagged
                         ? 'bg-red-600 hover:bg-red-700'
-                        : 'bg-blue-600 hover:bg-blue-700'
+                        : alreadyScored
+                          ? 'bg-amber-600 hover:bg-amber-700'
+                          : 'bg-blue-600 hover:bg-blue-700'
                     }`}
                   >
                     {flagged
                       ? t('exam.scoreAnyway', 'Score anyway')
-                      : t('exam.startEvaluation', 'Start scoring')}
+                      : alreadyScored
+                        ? t('exam.scoreAgain')
+                        : t('exam.startEvaluation', 'Start scoring')}
                   </button>
                 );
               })()}

@@ -125,6 +125,11 @@ export default {
 
   // Active Exam
   exam: {
+    alreadyScoredTitle: 'تم تقييمه في هذه المحطة سابقاً',
+    alreadyScoredBody: '{{score}}/{{max}} بواسطة {{examiner}}، {{time}}',
+    alreadyScoredHint:
+      'التقييم مجدداً يسجّل درجة جديدة تحل محل هذه. تُحفظ الدرجة القديمة وتظهر الاثنتان في التقرير.',
+    scoreAgain: 'تقييم مجدداً',
     scenario: 'السيناريو',
     tasks: 'المهام',
     checklist: 'قائمة التحقق',
@@ -240,6 +245,9 @@ export default {
 
   // Reports
   reports: {
+    correctionTitle: '{{count}} درجة أُعيد تقييمها عن قصد',
+    correctionBody:
+      'عُرضت على الممتحن الدرجة السابقة فاختار التقييم مجدداً، لذا فالدرجة الأحدث هي المقصودة. كلتاهما محفوظتان.',
     pulling: 'جلب النتائج من الأجهزة الأخرى...',
     refresh: 'تحديث',
     offlineResults:
