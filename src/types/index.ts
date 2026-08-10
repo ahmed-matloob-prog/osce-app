@@ -142,6 +142,35 @@ export interface CircuitExaminer {
   examinerNameAr?: string;
 }
 
+/**
+ * The one app-level admin PIN.
+ *
+ * Unlike everything else a device knows about itself, this **syncs** — that is
+ * the whole point. It is set once on the first device, and every other tablet
+ * learns it on its first sync, so nobody has to type it into fifteen of them.
+ *
+ * ── What this protects, and what it does not ────────────────────────────────
+ *
+ * The hash travels to the cloud and any signed-in device can read it. A PIN is
+ * four to six digits, so anyone who can read it can recover the PIN by trying
+ * every possibility — that takes no time at all, and no amount of hashing
+ * changes it while the secret is that short.
+ *
+ * So this stops an examiner wandering into the roster. It is not what keeps a
+ * determined person away from anybody's marks. That needs accounts and rules
+ * enforced on the server — see MULTI-ADMIN-DESIGN.md.
+ */
+export interface AdminCredential {
+  /** Always 'admin'. There is exactly one of these. */
+  id: string;
+  pinHash: string;
+  /** One-time codes, for when the PIN is forgotten. */
+  backupCodes: BackupCode[];
+  updatedAt: Date;
+  /** Which device set it, for the record. */
+  setBy?: string;
+}
+
 // Circuit (group of candidates running simultaneously)
 export interface Circuit {
   id: string;

@@ -1,214 +1,138 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useExamStore } from '../stores/examStore';
-import { useDeviceStore, type DeviceRole } from '../stores/deviceStore';
+import { useDeviceStore } from '../stores/deviceStore';
+import { useAdminStore } from '../stores/adminStore';
 import { isValidPinFormat } from '../utils/pinUtils';
+import BackupCodesModal from './BackupCodesModal';
 
 /**
- * Hand a tablet a job for the day.
+ * What this tablet is, and the admin PIN that gates becoming one.
  *
- * Lives at the top of Settings because on exam morning it is the first thing
- * done to each device and the last thing undone.
+ * The choosing itself happens at the front door — see RoleGate. This card is
+ * the way back out of admin, and the only place the PIN can be changed.
  */
 export default function DeviceModeCard() {
   const { t } = useTranslation();
-  const { exams, circuits, loadExams, loadCircuits } = useExamStore();
   const assignment = useDeviceStore((s) => s.assignment);
-  const assign = useDeviceStore((s) => s.assign);
+  const release = useDeviceStore((s) => s.release);
+  const { credential, loaded, load, setPin } = useAdminStore();
 
-  const [role, setRole] = useState<DeviceRole>('examiner');
-  const [examId, setExamId] = useState('');
-  const [circuitId, setCircuitId] = useState('');
-  const [stationId, setStationId] = useState('');
-  const [examinerName, setExaminerName] = useState(
-    () => localStorage.getItem('examinerName') ?? ''
-  );
-  const [pin, setPin] = useState('');
+  const [changing, setChanging] = useState(false);
+  const [pin, setPinInput] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
+  const [newCodes, setNewCodes] = useState<string[] | null>(null);
   const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    loadExams();
-  }, [loadExams]);
+    load();
+  }, [load]);
 
-  useEffect(() => {
-    if (examId) loadCircuits(examId);
-  }, [examId, loadCircuits]);
+  const hasPin = Boolean(credential?.pinHash);
 
-  const exam = exams.find((e) => e.id === examId);
-  const isPinned = assignment.role !== 'admin';
+  const field =
+    'w-full border border-gray-300 rounded-lg px-4 py-3 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500';
 
-  // ── Already pinned ───────────────────────────────────────────────────────
-  if (isPinned) {
-    return (
-      <div className="bg-blue-50 rounded-xl border border-blue-200 p-4 mb-4">
-        <h2 className="font-semibold text-blue-900 mb-1">{t('device.title')}</h2>
-        <p className="text-sm text-blue-900">
-          {assignment.role === 'checkin' ? t('device.checkInDesk') : t('device.station')}
-          {' — '}
-          {[
-            assignment.examName,
-            assignment.circuitNumber !== undefined
-              ? t('device.circuitN', { number: assignment.circuitNumber })
-              : null,
-            assignment.stationName,
-          ]
-            .filter(Boolean)
-            .join(' · ')}
-        </p>
-        <p className="text-xs text-blue-700 mt-2">{t('device.releaseFromHeader')}</p>
-      </div>
-    );
-  }
-
-  const canAssign =
-    Boolean(examId) &&
-    (role === 'checkin' || (Boolean(circuitId) && Boolean(stationId))) &&
-    (!pin || isValidPinFormat(pin));
-
-  const handleAssign = async () => {
+  const handleSetPin = async () => {
     setError('');
-    if (pin && !isValidPinFormat(pin)) {
-      setError(t('device.badPin'));
-      return;
-    }
-    const circuit = circuits.find((c) => c.id === circuitId);
-    const station = exam?.stations.find((s) => s.id === stationId);
-
-    await assign({
-      role,
-      examId,
-      examName: exam?.name ?? '',
-      circuitId: role === 'examiner' ? circuitId : undefined,
-      circuitNumber: role === 'examiner' ? circuit?.circuitNumber : undefined,
-      stationId: role === 'examiner' ? stationId : undefined,
-      stationName: role === 'examiner' ? station?.name : undefined,
-      examinerName: role === 'examiner' ? examinerName : undefined,
-      pin: pin || undefined,
-    });
-    if (role === 'examiner' && examinerName.trim()) {
-      localStorage.setItem('examinerName', examinerName.trim());
-    }
-    // Nothing to navigate to: the guard moves this device to its own screen
-    // as soon as the assignment lands.
+    if (!isValidPinFormat(pin)) return setError(t('device.badPin'));
+    if (pin !== confirmPin) return setError(t('gate.pinMismatch'));
+    setBusy(true);
+    const result = await setPin(pin);
+    setBusy(false);
+    if (!result.ok) return setError(t('device.badPin'));
+    setNewCodes(result.backupCodes ?? []);
+    setChanging(false);
+    setPinInput('');
+    setConfirmPin('');
   };
-
-  const field = 'w-full border border-gray-300 rounded-lg px-4 py-3 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500';
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
       <h2 className="font-semibold text-gray-900 mb-1">{t('device.title')}</h2>
-      <p className="text-sm text-gray-500 mb-4">{t('device.intro')}</p>
+      <p className="text-sm text-gray-500 mb-4">
+        {assignment.role === 'admin' ? t('device.isAdmin') : t('device.isPinned')}
+      </p>
 
-      <div className="space-y-4">
-        <div className="flex gap-2">
-          {(['examiner', 'checkin'] as const).map((r) => (
-            <button
-              key={r}
-              onClick={() => setRole(r)}
-              className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors ${
-                role === r ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              {r === 'examiner' ? t('device.station') : t('device.checkInDesk')}
-            </button>
-          ))}
-        </div>
+      <button
+        onClick={release}
+        className="w-full bg-gray-100 hover:bg-gray-200 text-gray-800 py-3 rounded-lg font-medium transition-colors"
+      >
+        {t('device.changeRole')}
+      </button>
 
-        <select
-          value={examId}
-          onChange={(e) => {
-            setExamId(e.target.value);
-            setCircuitId('');
-            setStationId('');
-          }}
-          className={field}
-          aria-label={t('session.selectExam')}
-        >
-          <option value="">-- {t('session.selectExam')} --</option>
-          {exams.map((e) => (
-            <option key={e.id} value={e.id}>
-              {e.name}
-            </option>
-          ))}
-        </select>
+      {/* The admin PIN. Only an admin device can see this, which is the point:
+          the tablets at the stations never show it. */}
+      {assignment.role === 'admin' && (
+        <div className="mt-5 pt-4 border-t border-gray-100">
+          <h3 className="font-medium text-gray-900">{t('device.adminPin')}</h3>
+          <p className="text-sm text-gray-500 mt-1 mb-3">
+            {loaded && !hasPin ? t('device.noPinYet') : t('device.pinSyncs')}
+          </p>
 
-        {role === 'examiner' && exam && (
-          <>
-            {circuits.length === 0 ? (
-              // Deliberately no "create one" here. Circuits are laid out once,
-              // by whoever is running the exam, from the check-in screen.
-              <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">
-                {t('device.noCircuits')}
-              </p>
-            ) : (
-              <select
-                value={circuitId}
-                onChange={(e) => setCircuitId(e.target.value)}
+          {changing ? (
+            <div className="space-y-3">
+              <input
+                type="password"
+                inputMode="numeric"
+                value={pin}
+                onChange={(e) => setPinInput(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder={t('gate.pinPlaceholder')}
                 className={field}
-                aria-label={t('session.selectCircuit')}
-              >
-                <option value="">-- {t('session.selectCircuit')} --</option>
-                {[...circuits]
-                  .sort((a, b) => a.circuitNumber - b.circuitNumber)
-                  .map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {t('device.circuitN', { number: c.circuitNumber })}
-                      {c.name ? ` — ${c.name}` : ''}
-                    </option>
-                  ))}
-              </select>
-            )}
-
-            <select
-              value={stationId}
-              onChange={(e) => setStationId(e.target.value)}
-              className={field}
-              aria-label={t('session.selectStation')}
+                aria-label={t('gate.pinPlaceholder')}
+              />
+              <input
+                type="password"
+                inputMode="numeric"
+                value={confirmPin}
+                onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder={t('gate.confirmPinPlaceholder')}
+                className={field}
+                aria-label={t('gate.confirmPinPlaceholder')}
+              />
+              {error && <p className="text-sm text-red-600">{error}</p>}
+              <div className="flex gap-2">
+                <button
+                  onClick={handleSetPin}
+                  disabled={busy || pin.length < 4}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white py-3 rounded-lg font-medium"
+                >
+                  {t('gate.createPin')}
+                </button>
+                <button
+                  onClick={() => {
+                    setChanging(false);
+                    setError('');
+                    setPinInput('');
+                    setConfirmPin('');
+                  }}
+                  className="px-4 text-gray-500 hover:text-gray-700"
+                >
+                  {t('common.cancel', 'Cancel')}
+                </button>
+              </div>
+              <p className="text-xs text-gray-500">{t('device.pinChangeWarning')}</p>
+            </div>
+          ) : (
+            <button
+              onClick={() => setChanging(true)}
+              className="w-full bg-gray-100 hover:bg-gray-200 text-gray-800 py-3 rounded-lg font-medium transition-colors"
             >
-              <option value="">-- {t('session.selectStation')} --</option>
-              {exam.stations.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-
-            <input
-              type="text"
-              value={examinerName}
-              onChange={(e) => setExaminerName(e.target.value)}
-              placeholder={t('session.examinerName')}
-              className={field}
-              aria-label={t('session.examinerName')}
-            />
-          </>
-        )}
-
-        <div>
-          <input
-            type="text"
-            inputMode="numeric"
-            value={pin}
-            onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-            placeholder={t('device.pinPlaceholder')}
-            className={field}
-            aria-label={t('device.pinLabel')}
-          />
-          <p className="text-xs text-gray-500 mt-1">{t('device.pinHint')}</p>
+              {hasPin ? t('device.changePin') : t('device.setPin')}
+            </button>
+          )}
         </div>
+      )}
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
+      <p className="text-xs text-gray-500 mt-4">{t('device.notSecurity')}</p>
 
-        <button
-          onClick={handleAssign}
-          disabled={!canAssign}
-          className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white py-3 rounded-lg font-medium transition-colors"
-        >
-          {t('device.assign')}
-        </button>
-
-        <p className="text-xs text-gray-500">{t('device.notSecurity')}</p>
-      </div>
+      {/* Shown once — the codes are stored hashed and cannot be read back. */}
+      <BackupCodesModal
+        isOpen={newCodes !== null}
+        codes={newCodes ?? []}
+        examName={t('gate.admin')}
+        onClose={() => setNewCodes(null)}
+      />
     </div>
   );
 }

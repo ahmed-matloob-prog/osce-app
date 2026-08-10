@@ -16,7 +16,15 @@ import {
   getCandidateByNumber,
   normalizeCandidateNumber,
 } from './schema';
-import type { Evaluation, ExamTemplate, Candidate, Circuit, CheckIn } from '../types';
+import type {
+  Evaluation,
+  ExamTemplate,
+  Candidate,
+  Circuit,
+  CheckIn,
+  AdminCredential,
+  BackupCode,
+} from '../types';
 
 // Collection names in Firestore
 const COLLECTIONS = {
@@ -25,6 +33,7 @@ const COLLECTIONS = {
   candidates: 'candidates',
   circuits: 'circuits',
   checkIns: 'checkIns',
+  config: 'config',
 } as const;
 
 /**
@@ -341,6 +350,10 @@ export async function fullSync(): Promise<{
   error?: string;
 }> {
   try {
+    // The admin PIN first: a tablet being set up needs it before anything
+    // else on this list is of any use to whoever is holding it.
+    await syncAdminCredential();
+
     // Pull exams from cloud
     const mergeResult = await mergeCloudExamsWithLocal();
 
@@ -520,6 +533,71 @@ export async function syncCircuitsAndCheckIns(): Promise<{
   }
 
   return { circuitsMerged, checkInsMerged, duplicateCircuitsResolved };
+}
+
+
+// The admin PIN
+// ---------------------------------------------------------------------------
+// The one piece of configuration that has to reach every device. Set it on one
+// tablet and the rest learn it when they sync, rather than somebody typing it
+// into fifteen of them at seven in the morning.
+
+/**
+ * Newest PIN wins, but a spent backup code stays spent everywhere.
+ *
+ * Those two rules pull in different directions and both matter. Last-write-wins
+ * on the whole record would let a device that still held an old copy resurrect
+ * a recovery code somebody had already used to get in.
+ */
+function mergeBackupCodes(a: BackupCode[] = [], b: BackupCode[] = []): BackupCode[] {
+  const spent = new Map<string, BackupCode>();
+  for (const code of [...a, ...b]) {
+    if (!code.used) continue;
+    spent.set(code.code, code);
+  }
+  const newest = a.length >= b.length ? a : b;
+  return newest.map((code) => spent.get(code.code) ?? code);
+}
+
+export async function syncAdminCredential(): Promise<{ pulled: boolean; pushed: boolean }> {
+  if (!isFirebaseConfigured()) return { pulled: false, pushed: false };
+
+  const cloudRows = (await fetchCollection(COLLECTIONS.config)).map((d) => ({
+    ...(d as unknown as AdminCredential),
+    updatedAt: fromTimestamp(d.updatedAt as Timestamp | null) ?? new Date(0),
+  }));
+  const cloud = cloudRows.find((row) => row.id === 'admin');
+  const local = await db.appConfig.get('admin');
+
+  let pulled = false;
+  if (cloud && (!local || isNewer(cloud.updatedAt, local.updatedAt))) {
+    await db.appConfig.put({
+      ...cloud,
+      backupCodes: mergeBackupCodes(cloud.backupCodes, local?.backupCodes),
+    });
+    pulled = true;
+  } else if (cloud && local) {
+    // Same PIN on both sides, but this device may have spent a code the cloud
+    // has not heard about, or the other way round.
+    const merged = mergeBackupCodes(local.backupCodes, cloud.backupCodes);
+    await db.appConfig.put({ ...local, backupCodes: merged });
+  }
+
+  const toPush = await db.appConfig.get('admin');
+  let pushed = false;
+  if (toPush) {
+    await pushCollection(COLLECTIONS.config, [toPush], (c) => ({
+      ...c,
+      updatedAt: toTimestamp(c.updatedAt),
+      backupCodes: (c.backupCodes ?? []).map((code) => ({
+        ...code,
+        usedAt: toTimestamp(code.usedAt),
+      })),
+    }));
+    pushed = true;
+  }
+
+  return { pulled, pushed };
 }
 
 // Candidates

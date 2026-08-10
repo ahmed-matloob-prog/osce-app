@@ -19,6 +19,7 @@ import CheckIn from './pages/CheckIn';
 
 // Layout
 import Layout from './components/ui/Layout';
+import RoleGate from './components/RoleGate';
 
 /**
  * Keep a pinned device on its own screens.
@@ -37,6 +38,7 @@ function DeviceRouteGuard({ children }: { children: React.ReactNode }) {
 
 function App() {
   const reconcile = useDeviceStore((s) => s.reconcile);
+  const role = useDeviceStore((s) => s.assignment.role);
 
   // Initialize sync listeners on mount
   useEffect(() => {
@@ -48,6 +50,10 @@ function App() {
   useEffect(() => {
     reconcile();
   }, [reconcile]);
+
+  // Nothing at all until somebody says what this tablet is for. Rendered
+  // outside the router on purpose: there is no URL that gets past it.
+  if (role === 'unset') return <RoleGate />;
 
   return (
     <BrowserRouter>

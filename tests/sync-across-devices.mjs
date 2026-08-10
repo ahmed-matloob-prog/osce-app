@@ -56,6 +56,11 @@ async function device(label, { offline = false } = {}) {
   // Open the app once so Dexie creates the schema before the fixture is written.
   await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
+  // Past the front door — this suite is about what syncs, not about who is
+  // allowed to ask.
+  await page.evaluate(F.asAdminDevice);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(2500);
   return {
     ctx,
     page,

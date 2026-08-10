@@ -31,6 +31,11 @@ page.on('pageerror', (e) => console.log(`   !! ${e.message.slice(0, 160)}`));
 // Admin sets up an exam, a roster and two circuits.
 await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' });
 await page.waitForTimeout(3000);
+// Start as an admin device. Getting *through* the front door is the subject of
+// tests/role-gate.mjs; this suite is about what a pinned tablet can do.
+await page.evaluate(F.asAdminDevice);
+await page.reload({ waitUntil: 'domcontentloaded' });
+await page.waitForTimeout(2500);
 await page.evaluate(F.seed, {
   exam: F.exam,
   candidates: [
@@ -49,28 +54,36 @@ await page.locator('div').filter({ has: splitBtn }).last().locator('input[type=n
 await splitBtn.click();
 await page.waitForTimeout(2500);
 
-console.log('\n1. An unpinned device is an admin device');
+console.log('\n1. An admin device sees everything');
 await page.goto(`${BASE}/settings`, { waitUntil: 'domcontentloaded' });
 await page.waitForTimeout(1500);
 const navFor = () => page.locator('aside nav a').allInnerTexts();
 check('admin sees the full navigation', (await navFor()).length, 5);
-check('the device card is offered',
-  await page.getByRole('button', { name: /Pin this device/i }).isVisible(), true);
+check('the device card offers to reassign it',
+  await page.getByRole('button', { name: /Change what this tablet is for/i }).isVisible(), true);
 
-console.log('\n2. Pin it to Station 1, Circuit 2, with a release PIN');
-await page.getByLabel('Select Exam').selectOption({ label: 'Sync Test Exam' });
-await page.waitForTimeout(1200);
-await page.getByLabel('Circuit Number').selectOption({ index: 2 });   // Circuit 2
-await page.getByLabel('Your Station').selectOption({ index: 1 });
-await page.getByLabel(/Examiner Name/i).fill('Dr Pinned');
-await page.getByLabel(/Release PIN/i).fill('4321');
-await page.getByRole('button', { name: /Pin this device/i }).click();
-await page.waitForTimeout(2000);
+console.log('\n2. Hand it to Station 1, Circuit 2');
+// Settings hands the tablet back to the chooser; the chooser is where its
+// job is picked.
+const handToStation = async (circuitIndex) => {
+  await page.getByRole('button', { name: /Change what this tablet is for/i }).click();
+  await page.waitForTimeout(1500);
+  await page.getByRole('button', { name: /Station/ }).first().click();
+  await page.waitForTimeout(1200);
+  await page.getByLabel('Select Exam').selectOption({ label: 'Sync Test Exam' });
+  await page.waitForTimeout(1500);
+  await page.getByLabel('Circuit Number').selectOption({ index: circuitIndex });
+  await page.getByLabel('Your Station').selectOption({ index: 1 });
+  await page.getByLabel('Examiner Name').fill('Dr Pinned');
+  await page.getByRole('button', { name: /Use this tablet here/i }).click();
+  await page.waitForTimeout(2000);
+};
+await handToStation(2);
 
-check('it is bounced off Settings', new URL(page.url()).pathname, '/session/setup');
+check('it lands on its own screen', new URL(page.url()).pathname, '/session/setup');
 check('navigation collapses to one destination', (await navFor()).length, 1);
 const bar = await page.locator('.bg-blue-900').innerText();
-console.log(`   header: ${bar.replace(/\n/g, ' | ')}`);
+console.log('   header: ' + bar.split(String.fromCharCode(10)).join(' | '));
 check('the header names the circuit', /Circuit 2/.test(bar), true);
 check('the header names the station',  /Station 1/.test(bar), true);
 check('the header names the examiner', /Dr Pinned/.test(bar), true);
@@ -119,28 +132,20 @@ check('exactly one active session', session.sessions, 1);
 check('started on the pinned circuit', session.circuitNumber, 2);
 check('under the pinned examiner name', session.examinerName, 'Dr Pinned');
 
-console.log('\n5. Releasing needs the PIN');
+console.log('\n5. Release hands the tablet back to the chooser');
 await page.goto(`${BASE}/session/setup`, { waitUntil: 'domcontentloaded' });
 await page.waitForTimeout(1500);
 await page.getByRole('button', { name: /^Release$/ }).click();
-await page.waitForTimeout(800);
-
-const typePin = async (digits) => {
-  for (const d of digits) await page.getByRole('button', { name: d, exact: true }).click();
-  await page.getByRole('button', { name: /^Unlock$/ }).click();
-  await page.waitForTimeout(1500);
-};
-
-await typePin('1111');
-check('a wrong PIN is rejected',
-  await page.getByText(/Incorrect PIN/i).isVisible(), true);
-check('and the device stays pinned', (await navFor()).length, 1);
-
-await typePin('4321');
-await page.waitForTimeout(800);
-check('the right PIN hands it back', (await navFor()).length, 5);
-check('and it is an admin device again',
+await page.waitForTimeout(1500);
+check('the role is given up',
   await page.evaluate(() => localStorage.getItem('osce.deviceAssignment')), null);
+check('and the chooser is what is left',
+  await page.getByText('What is this tablet for?').isVisible(), true);
+// Whether admin then costs a PIN is role-gate.mjs's business. Put this device
+// back to admin so the merge case below can re-pin it.
+await page.evaluate(F.asAdminDevice);
+await page.reload({ waitUntil: 'domcontentloaded' });
+await page.waitForTimeout(2500);
 
 console.log('\n6. The pinned circuit loses a merge while the tablet is closed');
 // Re-pin, then stage what sync would have done: this device's Circuit 2 is
@@ -149,12 +154,7 @@ console.log('\n6. The pinned circuit loses a merge while the tablet is closed');
 // than keep scoring against a circuit that no longer exists.
 await page.goto(`${BASE}/settings`, { waitUntil: 'domcontentloaded' });
 await page.waitForTimeout(1500);
-await page.getByLabel('Select Exam').selectOption({ label: 'Sync Test Exam' });
-await page.waitForTimeout(1200);
-await page.getByLabel('Circuit Number').selectOption({ index: 2 });
-await page.getByLabel('Your Station').selectOption({ index: 1 });
-await page.getByRole('button', { name: /Pin this device/i }).click();
-await page.waitForTimeout(1500);
+await handToStation(2);
 
 const pinnedBefore = JSON.parse(
   await page.evaluate(() => localStorage.getItem('osce.deviceAssignment'))

@@ -1,9 +1,7 @@
-import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useSyncStore } from '../../stores/syncStore';
 import { useDeviceStore, homeRouteFor } from '../../stores/deviceStore';
-import PinModal from '../PinModal';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -15,9 +13,8 @@ export default function Layout({ children }: LayoutProps) {
   const { isOnline, pendingCount } = useSyncStore();
   const assignment = useDeviceStore((s) => s.assignment);
   const release = useDeviceStore((s) => s.release);
-  const [releasing, setReleasing] = useState(false);
 
-  const isPinned = assignment.role !== 'admin';
+  const isPinned = assignment.role === 'examiner' || assignment.role === 'checkin';
 
   // Hide nav on active exam screen
   const hideNav = location.pathname.startsWith('/exam/active');
@@ -53,12 +50,6 @@ export default function Layout({ children }: LayoutProps) {
     .filter(Boolean)
     .join(' · ');
 
-  const handleRelease = async (pin: string) => {
-    const ok = await release(pin);
-    if (ok) setReleasing(false);
-    return ok;
-  };
-
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Offline Banner */}
@@ -81,23 +72,16 @@ export default function Layout({ children }: LayoutProps) {
               {assignment.examinerName}
             </span>
           )}
+          {/* Free, because it only leads back to the chooser. Going *up* to
+              admin from there is what costs the PIN. */}
           <button
-            onClick={() => (assignment.pinHash ? setReleasing(true) : handleRelease(''))}
+            onClick={release}
             className="ml-auto shrink-0 text-blue-100 hover:text-white underline underline-offset-2"
           >
             {t('device.release')}
           </button>
         </div>
       )}
-
-      <PinModal
-        isOpen={releasing}
-        onClose={() => setReleasing(false)}
-        onSubmit={handleRelease}
-        mode="verify"
-        title={t('device.releaseTitle')}
-        subtitle={t('device.releaseSubtitle')}
-      />
 
       {/* Main Content */}
       <main className="flex-1 pb-20 md:pb-0 md:ml-64">

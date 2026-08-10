@@ -75,6 +75,21 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // App-wide configuration — currently just the admin PIN, so that a tablet
+    // being set up learns it by syncing instead of somebody typing it into
+    // fifteen of them.
+    //
+    // Readable by any signed-in device, which is what makes it useful and also
+    // what limits it: the stored value is a hash of four to six digits, so
+    // anyone who can read it can recover the PIN by trying every possibility.
+    // It is a guard rail against wrong turns, not a lock. Deletion is shut so
+    // a device cannot lock everyone out of the admin role.
+    match /config/{configId} {
+      allow read: if signedIn();
+      allow create, update: if signedIn();
+      allow delete: if false;
+    }
+
     // Circuits — which examiners and which students belong to each parallel
     // run of the exam. Deleted softly like everything else, so `delete` stays
     // shut: a removed row would be re-created by the next device to sync.

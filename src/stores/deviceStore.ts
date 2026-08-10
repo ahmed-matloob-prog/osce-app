@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import { db } from '../db/schema';
-import { hashPin, verifyPin } from '../utils/pinUtils';
 
 /**
  * What this device is for.
@@ -15,13 +14,28 @@ import { hashPin, verifyPin } from '../utils/pinUtils';
  * Pinning the device to a job puts the right screen in front of them and takes
  * the rest away.
  *
+ * ── The default is 'unset', on purpose ──────────────────────────────────────
+ *
+ * This used to default to admin, so a tablet nobody had configured could
+ * delete an exam. On exam morning that means fifteen tablets each start with
+ * every power there is, and safety depends on somebody remembering to walk
+ * round and pin all of them. Safety that depends on remembering is a to-do
+ * list, not safety.
+ *
+ * So a fresh device has no role at all and is asked what it is for before it
+ * will do anything. Examiner and check-in are one tap. Admin costs a PIN.
+ *
  * ── This is not access control ──────────────────────────────────────────────
  *
  * It is stored on the device, in storage the user can clear, and enforced by
- * JavaScript running on that same device. Clearing site data resets it to
- * admin. It stops accidents and wrong turns; it does not keep a determined
- * person out of anything, and nobody should plan as though it does. Real
- * separation needs accounts and server-side rules — see MULTI-ADMIN-DESIGN.md.
+ * JavaScript running on that same device. Clearing site data returns the tablet
+ * to the chooser, where anyone can pick admin if they also know the PIN — and
+ * the PIN is four to six digits whose hash any signed-in device can read, so
+ * recovering it is a matter of seconds for anyone who tries.
+ *
+ * It stops accidents and wrong turns. It does not keep a determined person out
+ * of anything, and nobody should plan as though it does. Real separation needs
+ * accounts and server-side rules — see MULTI-ADMIN-DESIGN.md.
  *
  * ── Why localStorage and not the database ───────────────────────────────────
  *
@@ -30,7 +44,7 @@ import { hashPin, verifyPin } from '../utils/pinUtils';
  * tablet's identity travelling to the other fourteen would pin them all to
  * station 3.
  */
-export type DeviceRole = 'admin' | 'examiner' | 'checkin';
+export type DeviceRole = 'unset' | 'admin' | 'examiner' | 'checkin';
 
 export interface DeviceAssignment {
   role: DeviceRole;
@@ -48,13 +62,12 @@ export interface DeviceAssignment {
   circuitNumber?: number;
   stationName?: string;
 
-  /** Hashed. Absent means releasing the device only takes a confirmation. */
-  pinHash?: string;
   setAt?: string;
 }
 
 const STORAGE_KEY = 'osce.deviceAssignment';
-const ADMIN: DeviceAssignment = { role: 'admin' };
+const UNSET: DeviceAssignment = { role: 'unset' };
+const ROLES: DeviceRole[] = ['admin', 'examiner', 'checkin'];
 
 /**
  * Read synchronously at module load. An effect would render one frame of the
@@ -64,17 +77,17 @@ const ADMIN: DeviceAssignment = { role: 'admin' };
 function readAssignment(): DeviceAssignment {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return ADMIN;
+    if (!raw) return UNSET;
     const parsed = JSON.parse(raw) as DeviceAssignment;
-    if (parsed.role !== 'examiner' && parsed.role !== 'checkin') return ADMIN;
+    if (!ROLES.includes(parsed.role)) return UNSET;
     return parsed;
   } catch {
-    return ADMIN;
+    return UNSET;
   }
 }
 
 function writeAssignment(assignment: DeviceAssignment): void {
-  if (assignment.role === 'admin') localStorage.removeItem(STORAGE_KEY);
+  if (assignment.role === 'unset') localStorage.removeItem(STORAGE_KEY);
   else localStorage.setItem(STORAGE_KEY, JSON.stringify(assignment));
 }
 
@@ -87,22 +100,32 @@ export interface AssignInput {
   stationId?: string;
   stationName?: string;
   examinerName?: string;
-  /** Optional 4–6 digits. Without one, releasing the device just asks. */
-  pin?: string;
 }
 
 interface DeviceState {
   assignment: DeviceAssignment;
+  /** Pinned to a single job — an examiner station or a check-in desk. */
   isPinned: () => boolean;
+  /** Nobody has said what this device is for yet. */
+  needsRole: () => boolean;
   assign: (input: AssignInput) => Promise<void>;
-  release: (pin?: string) => Promise<boolean>;
+  becomeAdmin: () => void;
+  /** Hand the device back to the chooser. Free — going *up* to admin is what
+   *  costs a PIN, and an examiner who lands back on the gate has gained
+   *  nothing they did not already have. */
+  release: () => void;
   reconcile: () => Promise<void>;
 }
 
 export const useDeviceStore = create<DeviceState>((set, get) => ({
   assignment: readAssignment(),
 
-  isPinned: () => get().assignment.role !== 'admin',
+  isPinned: () => {
+    const { role } = get().assignment;
+    return role === 'examiner' || role === 'checkin';
+  },
+
+  needsRole: () => get().assignment.role === 'unset',
 
   assign: async (input) => {
     const assignment: DeviceAssignment = {
@@ -114,22 +137,26 @@ export const useDeviceStore = create<DeviceState>((set, get) => ({
       stationId: input.stationId,
       stationName: input.stationName,
       examinerName: input.examinerName?.trim() || undefined,
-      pinHash: input.pin ? await hashPin(input.pin) : undefined,
       setAt: new Date().toISOString(),
     };
     writeAssignment(assignment);
     set({ assignment });
   },
 
-  /** Hand the device back to an admin. Returns false if the PIN was wrong. */
-  release: async (pin) => {
-    const { pinHash } = get().assignment;
-    if (pinHash) {
-      if (!pin || !(await verifyPin(pin, pinHash))) return false;
-    }
-    writeAssignment(ADMIN);
-    set({ assignment: ADMIN });
-    return true;
+  /**
+   * Become an admin device. The PIN is checked by the caller — the gate — so
+   * that this store stays about *what this device is* and the credential store
+   * stays about *who is allowed*.
+   */
+  becomeAdmin: () => {
+    const assignment: DeviceAssignment = { role: 'admin', setAt: new Date().toISOString() };
+    writeAssignment(assignment);
+    set({ assignment });
+  },
+
+  release: () => {
+    writeAssignment(UNSET);
+    set({ assignment: UNSET });
   },
 
   /**
@@ -181,6 +208,9 @@ export function homeRouteFor(assignment: DeviceAssignment): string {
 
 export function isRouteAllowed(assignment: DeviceAssignment, pathname: string): boolean {
   if (assignment.role === 'admin') return true;
+  // 'unset' never reaches here — the gate replaces the whole app until a role
+  // is chosen — but be explicit rather than fall through to the examiner rule.
+  if (assignment.role === 'unset') return false;
   if (assignment.role === 'examiner') {
     return pathname.startsWith('/session/setup') || pathname.startsWith('/exam/active');
   }

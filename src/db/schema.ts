@@ -7,6 +7,7 @@ import type {
   ExamSession,
   AppSettings,
   CheckIn,
+  AdminCredential,
 } from '../types';
 import { normalizeCandidateNumber } from '../utils/qrUtils';
 
@@ -22,6 +23,13 @@ class OSCEDatabase extends Dexie {
   examSessions!: EntityTable<ExamSession, 'id'>;
   checkIns!: EntityTable<CheckIn, 'id'>;
   settings!: EntityTable<AppSettings & { id: string }, 'id'>;
+  /**
+   * App-wide configuration that has to reach every device — currently just the
+   * admin PIN. Deliberately a separate table from `settings`, which is the one
+   * thing that must never sync: settings are this device's preferences, this
+   * is the institution's.
+   */
+  appConfig!: EntityTable<AdminCredential, 'id'>;
 
   constructor() {
     super('OSCEDatabase');
@@ -154,6 +162,15 @@ class OSCEDatabase extends Dexie {
           );
         }
       });
+
+    // Version 6
+    // -------------------------------------------------------------------
+    // The admin PIN. A single row, id 'admin', synced like exam data rather
+    // than kept per-device — set it once and every tablet learns it on its
+    // first sync, instead of somebody typing it into fifteen of them.
+    this.version(6).stores({
+      appConfig: 'id',
+    });
   }
 }
 

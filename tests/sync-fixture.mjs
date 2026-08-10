@@ -142,3 +142,15 @@ export function readMark() {
     };
   });
 }
+
+/**
+ * Runs inside the page: declare this device an admin without going through the
+ * front door.
+ *
+ * Scaffolding for the suites whose subject is *not* the gate — sync and the
+ * merge rules. The gate has its own test; making every other test walk through
+ * it would only make them slower and more brittle.
+ */
+export function asAdminDevice() {
+  localStorage.setItem('osce.deviceAssignment', JSON.stringify({ role: 'admin' }));
+}
