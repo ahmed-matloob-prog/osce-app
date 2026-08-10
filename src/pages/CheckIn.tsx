@@ -6,6 +6,7 @@ import { useCheckInStore } from '../stores/checkInStore';
 import { useCandidateStore } from '../stores/candidateStore';
 import type { ExamTemplate, Circuit, Candidate } from '../types';
 import { validateQR, findCandidateByNumber, candidatesForExam } from '../utils/qrUtils';
+import CircuitListSheet from '../components/CircuitListSheet';
 import { getDeviceId } from '../utils/pinUtils';
 import { distributeIntoCircuits, removeCircuit } from '../services/circuitAssignment';
 
@@ -52,6 +53,30 @@ export default function CheckIn() {
 
   // Enrolled in the exam but not yet in any circuit
   const assignedIds = new Set(checkIns.map((c) => c.candidateId));
+
+  const [showCircuitLists, setShowCircuitLists] = useState(false);
+
+  // Who is in each circuit, in college-ID order — the order a door list has to
+  // be read in. Built from the check-in records, which are what "belongs to
+  // this circuit" actually means.
+  const membersByCircuit = (() => {
+    const byId = new Map(examCandidates.map((c) => [c.id, c]));
+    const map = new Map<string, typeof examCandidates>();
+    for (const record of checkIns) {
+      const candidate = byId.get(record.candidateId);
+      if (!candidate) continue;
+      map.set(record.circuitId, [...(map.get(record.circuitId) ?? []), candidate]);
+    }
+    for (const [circuitId, list] of map) {
+      map.set(
+        circuitId,
+        [...list].sort((a, b) =>
+          a.candidateNumber.localeCompare(b.candidateNumber, undefined, { numeric: true })
+        )
+      );
+    }
+    return map;
+  })();
   const unassignedCount = examCandidates.filter((c) => !assignedIds.has(c.id)).length;
 
   const handleDistribute = async () => {
@@ -493,6 +518,17 @@ export default function CheckIn() {
                 </button>
               </div>
             )}
+
+            {/* One sheet per circuit, to hand to each door. Also the paper
+                fallback if a tablet dies with a queue in front of it. */}
+            {circuits.length > 0 && (
+              <button
+                onClick={() => setShowCircuitLists(true)}
+                className="mt-3 w-full py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium text-sm"
+              >
+                🖨 {t('circuitList.open')}
+              </button>
+            )}
           </div>
 
           {/* Check-In Panel */}
@@ -644,6 +680,14 @@ export default function CheckIn() {
             onClose={() => setShowScanner(false)}
           />
         </Suspense>
+      )}
+      {showCircuitLists && selectedExam && (
+        <CircuitListSheet
+          exam={selectedExam}
+          circuits={circuits}
+          membersByCircuit={membersByCircuit}
+          onClose={() => setShowCircuitLists(false)}
+        />
       )}
     </div>
   );

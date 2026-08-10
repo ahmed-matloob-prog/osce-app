@@ -81,6 +81,18 @@ export default {
     badBackupCode: 'الرمز غير صالح أو استُخدم من قبل.',
   },
 
+  circuitList: {
+    title: 'قوائم الدوائر',
+    summary: '{{circuits}} دائرة · {{students}} طالب · صفحة لكل دائرة',
+    print: 'طباعة',
+    open: 'قوائم الدوائر',
+    studentCount: '{{count}} طالب',
+    collegeId: 'الرقم الجامعي',
+    name: 'الاسم',
+    present: 'حاضر',
+    empty: 'لا يوجد طلبة في هذه الدائرة بعد.',
+  },
+
   device: {
     title: 'هذا الجهاز',
     intro: 'حدّد مهمة واحدة لهذا الجهاز لهذا اليوم، وسيعرض الشاشة التي يحتاجها فقط.',

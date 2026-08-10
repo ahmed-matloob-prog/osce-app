@@ -82,6 +82,18 @@ export default {
     badBackupCode: 'That code is not valid, or it has already been used.',
   },
 
+  circuitList: {
+    title: 'Circuit lists',
+    summary: '{{circuits}} circuits · {{students}} students · one page each',
+    print: 'Print',
+    open: 'Circuit lists',
+    studentCount: '{{count}} students',
+    collegeId: 'College ID',
+    name: 'Name',
+    present: 'Present',
+    empty: 'No students assigned to this circuit yet.',
+  },
+
   device: {
     title: 'This device',
     intro:

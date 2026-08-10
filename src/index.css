@@ -84,7 +84,7 @@ button, .btn {
     margin: 10mm;
   }
 
-  body > *:not(.badge-sheet-root) {
+  body > *:not(.badge-sheet-root):not(.circuit-sheet-root) {
     display: none !important;
   }
 
@@ -134,5 +134,66 @@ button, .btn {
   .badge-card img {
     max-width: 100%;
     height: auto;
+  }
+}
+
+/* Circuit lists
+   ----------------------------------------------------------------
+   Same trick as the badges: the sheet is portalled to <body> so everything
+   else can be taken out of the print flow, and each circuit starts on its own
+   page because these are handed out one per door.
+
+   Printed by the browser on purpose — the names are Arabic, and jsPDF's fonts
+   cannot represent Arabic at all. */
+@media print {
+  body > *:not(.circuit-sheet-root):not(.badge-sheet-root) {
+    display: none !important;
+  }
+
+  .circuit-print-hide {
+    display: none !important;
+  }
+
+  .circuit-sheet-root {
+    position: static !important;
+    display: block !important;
+    background: none !important;
+    padding: 0 !important;
+  }
+
+  .circuit-sheet-panel {
+    display: block !important;
+    max-width: none !important;
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .circuit-sheet-scroll {
+    flex: none !important;
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+    padding: 0 !important;
+  }
+
+  /* One circuit per sheet of paper. */
+  .circuit-page {
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .circuit-page:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  /* A row must not be split across two pages — half a student on each is
+     worse than a shorter page. */
+  .circuit-page tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 }
