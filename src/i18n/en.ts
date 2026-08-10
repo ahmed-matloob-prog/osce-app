@@ -244,6 +244,12 @@ export default {
 
   // Reports
   reports: {
+    emptyTitle: 'No marks recorded for this exam yet',
+    emptyBody:
+      'Reports are built from examiner marks. Once a station has scored its first candidate and that tablet has synced, the results will appear here.',
+    orphanedTitle: '{{count}} mark(s) belong to students not on this device',
+    orphanedBody:
+      'Sync this device before publishing — the report is incomplete as it stands.',
     title: 'Reports',
     generateReport: 'Generate Report',
     exportPDF: 'Export PDF',

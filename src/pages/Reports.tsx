@@ -14,7 +14,7 @@ import {
   exportCohortToExcel,
   exportCandidateToExcel,
 } from '../services/excelExporter';
-import type { Evaluation, Circuit } from '../types';
+import type { Evaluation, Circuit, Candidate } from '../types';
 
 export default function Reports() {
   const { t } = useTranslation();
@@ -25,6 +25,9 @@ export default function Reports() {
   const [selectedCandidateId, setSelectedCandidateId] = useState<string>('');
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
   const [circuits, setCircuits] = useState<Circuit[]>([]);
+  // Resolved from the database by id rather than from the roster — see below.
+  const [examinedCandidates, setExaminedCandidates] = useState<Candidate[]>([]);
+  const [orphanedMarks, setOrphanedMarks] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [reportType, setReportType] = useState<'cohort' | 'candidate' | 'station'>('cohort');
 
@@ -39,6 +42,8 @@ export default function Reports() {
     if (!selectedExamId) {
       setEvaluations([]);
       setCircuits([]);
+      setExaminedCandidates([]);
+      setOrphanedMarks(0);
       return;
     }
 
@@ -52,11 +57,27 @@ export default function Reports() {
           .toArray();
         setEvaluations(evals);
 
+        // Who was examined — looked up by id, including students who have since
+        // been removed from the roster.
+        //
+        // This used to filter the live roster, which drops anyone soft-deleted.
+        // A student taken off the roster after sitting the exam still has marks,
+        // and those marks still belong to them: the cohort report simply counted
+        // fewer people than sat, and said nothing about it. A results document
+        // that silently loses a candidate is the worst kind of wrong.
+        const ids = [...new Set(evals.map((e) => e.candidateId))];
+        const rows = await db.candidates.bulkGet(ids);
+        setExaminedCandidates(rows.filter((c): c is Candidate => Boolean(c)));
+        // Marks whose student is not on this device at all. Usually means this
+        // tablet has not pulled the roster yet, and the report would be
+        // incomplete if published as it stands.
+        setOrphanedMarks(rows.filter((c) => !c).length);
+
         // Load circuits for this exam
-        const examCircuits = await db.circuits
+        const examCircuits = (await db.circuits
           .where('examId')
           .equals(selectedExamId)
-          .toArray();
+          .toArray()).filter((c) => !c.deleted);
         setCircuits(examCircuits);
       } catch (error) {
         console.error('Failed to load data:', error);
@@ -69,11 +90,12 @@ export default function Reports() {
   }, [selectedExamId]);
 
   const selectedExam = exams.find((e) => e.id === selectedExamId);
-  const selectedCandidate = candidates.find((c) => c.id === selectedCandidateId);
+  const selectedCandidate =
+    examinedCandidates.find((c) => c.id === selectedCandidateId) ??
+    candidates.find((c) => c.id === selectedCandidateId);
 
-  // Get candidates who have evaluations for this exam
-  const evaluatedCandidateIds = [...new Set(evaluations.map((e) => e.candidateId))];
-  const evaluatedCandidates = candidates.filter((c) => evaluatedCandidateIds.includes(c.id));
+  // Everyone with a mark in this exam, roster or not.
+  const evaluatedCandidates = examinedCandidates;
 
   // Get evaluations for selected candidate
   const candidateEvaluations = evaluations.filter(
@@ -205,6 +227,31 @@ export default function Reports() {
           </div>
         )}
       </div>
+
+      {/* Nothing to report yet.
+          The page used to render the exam picker and then simply stop, with no
+          explanation — which reads as a broken report screen rather than an
+          exam nobody has scored yet. */}
+      {selectedExamId && !isLoading && evaluations.length === 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-6 text-center mb-4">
+          <div className="text-4xl mb-3">📊</div>
+          <h2 className="font-semibold text-gray-900">{t('reports.emptyTitle')}</h2>
+          <p className="text-sm text-gray-500 mt-2 max-w-md mx-auto">
+            {t('reports.emptyBody')}
+          </p>
+        </div>
+      )}
+
+      {/* Marks whose student is not on this device. The report would be
+          incomplete, and that has to be said before anybody publishes it. */}
+      {orphanedMarks > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
+          <p className="text-sm text-amber-900 font-medium">
+            {t('reports.orphanedTitle', { count: orphanedMarks })}
+          </p>
+          <p className="text-sm text-amber-900 mt-1">{t('reports.orphanedBody')}</p>
+        </div>
+      )}
 
       {/* Report Type Selection */}
       {selectedExamId && evaluations.length > 0 && (
