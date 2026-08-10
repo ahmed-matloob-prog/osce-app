@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useExamStore } from '../stores/examStore';
 import { useCandidateStore } from '../stores/candidateStore';
 import { db } from '../db/schema';
+import { mergeCloudEvaluations } from '../db/sync';
 import {
   generateStationReport,
   generateCandidateSummaryReport,
@@ -30,6 +31,10 @@ export default function Reports() {
   const [orphanedMarks, setOrphanedMarks] = useState(0);
   /** Marks per exam, so the picker can say which exams actually have results. */
   const [marksByExam, setMarksByExam] = useState<Record<string, number>>({});
+  const [pulling, setPulling] = useState(false);
+  const [pulledOffline, setPulledOffline] = useState(false);
+  /** Bumped to re-run the loader after a manual refresh. */
+  const [refreshKey, setRefreshKey] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [reportType, setReportType] = useState<'cohort' | 'candidate' | 'station'>('cohort');
 
@@ -59,6 +64,13 @@ export default function Reports() {
     const loadData = async () => {
       setIsLoading(true);
       try {
+        // Other devices' marks first. Without this the screen shows only what
+        // was scored here, and says nothing about the rest.
+        setPulling(true);
+        const pulled = await mergeCloudEvaluations(selectedExamId);
+        setPulledOffline(pulled.offline);
+        setPulling(false);
+
         // Load evaluations
         const evals = await db.evaluations
           .where('examId')
@@ -96,7 +108,7 @@ export default function Reports() {
     };
 
     loadData();
-  }, [selectedExamId]);
+  }, [selectedExamId, refreshKey]);
 
   const selectedExam = exams.find((e) => e.id === selectedExamId);
   const selectedCandidate =
@@ -245,7 +257,7 @@ export default function Reports() {
         {selectedExamId && (
           <div className="mt-3 text-sm text-gray-600">
             {isLoading ? (
-              <span>{t('common.loading')}...</span>
+              <span>{pulling ? t('reports.pulling') : `${t('common.loading')}...`}</span>
             ) : (
               <span>
                 {t('reports.evaluationCount', '{{count}} evaluations found', {
@@ -255,7 +267,21 @@ export default function Reports() {
                 {t('reports.candidateCount', '{{count}} candidates', {
                   count: evaluatedCandidates.length,
                 })}
+                {' · '}
+                <button
+                  onClick={() => setRefreshKey((n) => n + 1)}
+                  className="text-blue-600 hover:text-blue-700 underline underline-offset-2"
+                >
+                  {t('reports.refresh')}
+                </button>
               </span>
+            )}
+            {/* Marks from other tablets could not be fetched, so what is on
+                screen is this device's own view and may be short. */}
+            {pulledOffline && !isLoading && (
+              <p className="mt-2 text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2">
+                {t('reports.offlineResults')}
+              </p>
             )}
           </div>
         )}

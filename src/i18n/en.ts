@@ -244,6 +244,10 @@ export default {
 
   // Reports
   reports: {
+    pulling: 'Fetching results from other tablets...',
+    refresh: 'Refresh',
+    offlineResults:
+      'Could not reach the cloud, so this shows only marks already on this device. Other tablets may have more.',
     choosePrompt: 'Choose an exam above to see its results.',
     marksCount: '{{count}} marks',
     duplicateTitle: '{{count}} student(s) scored more than once at the same station',

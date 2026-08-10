@@ -169,6 +169,52 @@ check('both marks are shown so somebody can choose',
 check('and it says the totals include both',
   /both are counted in the totals/.test(body), true);
 
+console.log('\n6. A second device sees marks it never recorded');
+// The exam-day case: fifteen tablets score, the admin reads the results on a
+// sixteenth. Marks used to be push-only, so that device saw nothing and said
+// nothing about it.
+await page.goto(`${BASE}/settings`, { waitUntil: 'domcontentloaded' });
+await page.waitForTimeout(2000);
+await page.getByRole('button', { name: /Sync Now/i }).click();
+await page.waitForTimeout(6000);
+
+const admin = await browser.newContext({ viewport: { width: 1280, height: 1100 } });
+const adminPage = await admin.newPage();
+adminPage.on('dialog', (d) => d.accept());
+await adminPage.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' });
+await adminPage.waitForTimeout(3000);
+await adminPage.evaluate(F.asAdminDevice);
+await adminPage.reload({ waitUntil: 'domcontentloaded' });
+await adminPage.waitForTimeout(4000);
+
+const localMarks = await adminPage.evaluate(() => new Promise((r) => {
+  const q = indexedDB.open('OSCEDatabase');
+  q.onsuccess = () => {
+    const a = q.result.transaction('evaluations', 'readonly').objectStore('evaluations').getAll();
+    a.onsuccess = () => r(a.result.length);
+  };
+}));
+check('the admin device recorded no marks of its own', localMarks, 0);
+
+await adminPage.goto(`${BASE}/reports`, { waitUntil: 'domcontentloaded' });
+await adminPage.waitForTimeout(2000);
+const adminOpts = await adminPage.locator('select').first().locator('option').allInnerTexts();
+await adminPage.locator('select').first().selectOption({
+  index: adminOpts.findIndex((o) => o.startsWith('Sync Test Exam')),
+});
+await adminPage.waitForTimeout(6000);
+const adminBody = await adminPage.locator('body').innerText();
+console.log('   admin device sees: ' + (adminBody.match(/[0-9]+ evaluations found[^\n]*/) || ['nothing'])[0]);
+// Two, not three: the fixture wrote one mark with synced:true to stand in for
+// a foreign mark, so it was never offered to the cloud. The two real ones are
+// exactly what should arrive.
+check('it pulled the marks down from the cloud',
+  /2 evaluations found/.test(adminBody), true);
+check('and the student came down with them',
+  /1 candidates/.test(adminBody), true);
+check('so nothing is reported as missing',
+  /belong to students not on this device/.test(adminBody), false);
+
 console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED'}\n`);
 await browser.close();
 process.exit(failures ? 1 : 0);

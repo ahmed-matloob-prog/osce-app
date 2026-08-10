@@ -536,6 +536,52 @@ export async function syncCircuitsAndCheckIns(): Promise<{
 }
 
 
+/**
+ * Bring marks down from the cloud for one exam.
+ *
+ * Marks were push-only. `fetchEvaluationsFromCloud` was written and then never
+ * called by anything, so a mark left the tablet that recorded it and never came
+ * back to any other device. On a fifteen-circuit exam that means the admin's
+ * reporting device shows only what was scored on the admin's own device — and
+ * shows it without complaint, which is the dangerous part. The results document
+ * looks finished and is missing fourteen circuits.
+ *
+ * Scoped to one exam, and called from the Reports screen rather than from the
+ * background sync, because it is the only place other devices' marks are
+ * needed. A cohort of 450 across several stations is thousands of documents;
+ * pulling all of them on every background sync on every tablet would be a great
+ * deal of reading for data nobody at a station looks at.
+ *
+ * A mark is immutable once written, so anything already held locally is left
+ * alone: a local copy is either the same mark or one that has not been pushed
+ * yet, and neither should be overwritten by the cloud.
+ */
+export async function mergeCloudEvaluations(examId: string): Promise<{
+  added: number;
+  offline: boolean;
+}> {
+  if (!isFirebaseConfigured() || !examId) return { added: 0, offline: false };
+
+  let cloud: Evaluation[];
+  try {
+    cloud = await fetchEvaluationsFromCloud(examId);
+  } catch {
+    return { added: 0, offline: true };
+  }
+  if (cloud.length === 0) return { added: 0, offline: false };
+
+  const localIds = new Set(
+    (await db.evaluations.where('examId').equals(examId).toArray()).map((e) => e.id)
+  );
+
+  const missing = cloud
+    .filter((e) => !localIds.has(e.id))
+    .map((e) => ({ ...e, synced: true, startTime: e.startTime ?? new Date() }));
+
+  if (missing.length > 0) await db.evaluations.bulkPut(missing);
+  return { added: missing.length, offline: false };
+}
+
 // The admin PIN
 // ---------------------------------------------------------------------------
 // The one piece of configuration that has to reach every device. Set it on one
