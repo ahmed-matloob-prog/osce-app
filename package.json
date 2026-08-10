@@ -15,7 +15,8 @@
     "test:sync": "node tests/sync-across-devices.mjs",
     "test:device": "node tests/device-mode.mjs",
     "test:gate": "node tests/role-gate.mjs",
-    "test:reports": "node tests/reports.mjs"
+    "test:reports": "node tests/reports.mjs",
+    "test:pwa": "node tests/pwa-update.mjs"
   },
   "dependencies": {
     "dexie": "^4.2.1",

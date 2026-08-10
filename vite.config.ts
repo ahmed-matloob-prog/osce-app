@@ -36,7 +36,11 @@ export default defineConfig({
     tailwindcss(),
     basicSsl(), // Enable HTTPS for camera access on mobile
     VitePWA({
-      registerType: 'autoUpdate',
+      // 'prompt', not 'autoUpdate' — the app decides *when* to apply a waiting
+      // update, because autoUpdate reloads the moment one is ready and that
+      // would throw away a part-scored candidate. See src/pwa.ts.
+      registerType: 'prompt',
+      injectRegister: null,
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
       manifest: {
         name: 'OSCE Exam App',
