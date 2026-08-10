@@ -15,6 +15,7 @@ import {
   type BackupCounts,
 } from '../services/backupExporter';
 import DeviceModeCard from '../components/DeviceModeCard';
+import { buildLabel, FIREBASE_PROJECT, isNonProductionBuild } from '../build-info';
 import type { Candidate, ExamTemplate } from '../types';
 
 // QR Code Image component that loads async
@@ -509,8 +510,16 @@ export default function Settings() {
       <div className="bg-white rounded-xl border border-gray-200 p-4">
         <h2 className="font-semibold text-gray-900 mb-3">{t('common.appName')}</h2>
         <div className="text-sm text-gray-600">
-          <p>Version: 1.0.0</p>
           <p className="mt-1">OSCE Examination App for Clinical Assessment</p>
+          {/* The actual build, not a number somebody typed in once. On device
+              day this is what tells you which tablet did not update. */}
+          <p className="mt-3 font-mono text-xs text-gray-500">{buildLabel()}</p>
+          <p className="font-mono text-xs text-gray-500">{FIREBASE_PROJECT}</p>
+          {isNonProductionBuild() && (
+            <p className="mt-2 text-xs font-medium text-red-700 bg-red-50 border border-red-200 rounded-lg p-2">
+              {t('build.notProduction')}
+            </p>
+          )}
         </div>
       </div>
 

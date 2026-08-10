@@ -3,9 +3,34 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import basicSsl from '@vitejs/plugin-basic-ssl'
+import { execSync } from 'node:child_process'
+
+// Which build a tablet is actually running.
+//
+// Settings used to read `Version: 1.0.0`, hardcoded, so every device claimed
+// the same version whatever it was running — worse than showing nothing,
+// because it looks like an answer. Tablets update through a service worker
+// that needs the app fully closed and reopened, sometimes twice, so "is this
+// one stale?" is a real question with real consequences on exam morning.
+//
+// Stamped at build time. Falls back gracefully: a build from a downloaded zip
+// with no git history still produces something readable rather than failing.
+function buildStamp() {
+  try {
+    const commit = execSync('git rev-parse --short HEAD').toString().trim()
+    const dirty = execSync('git status --porcelain').toString().trim() ? '+' : ''
+    return commit + dirty
+  } catch {
+    return 'unknown'
+  }
+}
 
 // https://vite.dev/config/
 export default defineConfig({
+  define: {
+    __BUILD_COMMIT__: JSON.stringify(buildStamp()),
+    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+  },
   plugins: [
     react(),
     tailwindcss(),

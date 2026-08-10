@@ -5,6 +5,7 @@ import { useDeviceStore } from '../stores/deviceStore';
 import { useAdminStore } from '../stores/adminStore';
 import { isValidPinFormat } from '../utils/pinUtils';
 import BackupCodesModal from './BackupCodesModal';
+import { buildLabel, isNonProductionBuild } from '../build-info';
 
 /**
  * The front door.
@@ -106,6 +107,16 @@ export default function RoleGate() {
           </div>
 
           <p className="text-xs text-gray-400 text-center mt-6">{t('device.notSecurity')}</p>
+
+          {/* Which build this tablet is running. On the front door on purpose:
+              on device day you check fifteen tablets without signing in to any
+              of them, and a stale one is visible at a glance. */}
+          <p className="text-xs text-gray-400 text-center mt-2 font-mono">{buildLabel()}</p>
+          {isNonProductionBuild() && (
+            <p className="mt-3 text-xs font-medium text-red-700 bg-red-50 border border-red-200 rounded-lg p-2 text-center">
+              {t('build.notProduction')}
+            </p>
+          )}
         </div>
       </div>
     );

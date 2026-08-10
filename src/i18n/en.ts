@@ -47,6 +47,11 @@ export default {
   },
 
   // Exam Session
+  build: {
+    notProduction:
+      'This build is not connected to the real exam database. Do not use it for a real exam.',
+  },
+
   gate: {
     title: 'What is this tablet for?',
     subtitle: 'Choose once. You can change it later.',
