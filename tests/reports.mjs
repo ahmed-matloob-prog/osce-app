@@ -50,7 +50,11 @@ await page.evaluate(F.seed, {
 const openReports = async () => {
   await page.goto(`${BASE}/reports`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(1800);
-  await page.locator('select').first().selectOption({ label: 'Sync Test Exam' });
+  // The label now carries a mark count, so match on the name only.
+  const opts = await page.locator('select').first().locator('option').allInnerTexts();
+  await page.locator('select').first().selectOption({
+    index: opts.findIndex((o) => o.startsWith('Sync Test Exam')),
+  });
   await page.waitForTimeout(1800);
   return page.locator('body').innerText();
 };
@@ -139,6 +143,31 @@ check('the incomplete report is called out',
   /belong to students not on this device/.test(body), true);
 check('and it says what to do about it',
   /Sync this device before publishing/.test(body), true);
+
+console.log('\n5. Two marks for one student at one station are called out');
+await page.evaluate(({ examId, circuitId, candidateId }) => new Promise((r, j) => {
+  const q = indexedDB.open('OSCEDatabase');
+  q.onsuccess = () => {
+    const tx = q.result.transaction('evaluations', 'readwrite');
+    tx.objectStore('evaluations').put({
+      id: 'eval-0003', examId, circuitId, candidateId,
+      stationId: 'st-1', examinerName: 'Dr Reports', identifiedBy: 'scanned',
+      scores: [{ itemId: 'it-1', score: 1 }], notes: '',
+      startTime: new Date(), endTime: new Date(),
+      totalScore: 1, maxPossibleScore: 4, synced: false,
+    });
+    tx.oncomplete = () => r(true);
+    tx.onerror = () => j(tx.error);
+  };
+}), { examId: F.EXAM_ID, circuitId: CIRCUIT, candidateId: CAND });
+
+body = await openReports();
+check('the double-scored student is flagged',
+  /scored more than once at the same station/.test(body), true);
+check('both marks are shown so somebody can choose',
+  body.includes('3/4') && body.includes('1/4'), true);
+check('and it says the totals include both',
+  /both are counted in the totals/.test(body), true);
 
 console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED'}\n`);
 await browser.close();

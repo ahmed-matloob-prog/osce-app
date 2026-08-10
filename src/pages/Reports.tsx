@@ -28,6 +28,8 @@ export default function Reports() {
   // Resolved from the database by id rather than from the roster — see below.
   const [examinedCandidates, setExaminedCandidates] = useState<Candidate[]>([]);
   const [orphanedMarks, setOrphanedMarks] = useState(0);
+  /** Marks per exam, so the picker can say which exams actually have results. */
+  const [marksByExam, setMarksByExam] = useState<Record<string, number>>({});
   const [isLoading, setIsLoading] = useState(false);
   const [reportType, setReportType] = useState<'cohort' | 'candidate' | 'station'>('cohort');
 
@@ -35,6 +37,13 @@ export default function Reports() {
   useEffect(() => {
     loadExams();
     loadCandidates();
+    // Which exams have results at all. Without this the picker is a list of
+    // names that give no clue which one to open.
+    db.evaluations.toArray().then((all) => {
+      const counts: Record<string, number> = {};
+      for (const e of all) counts[e.examId] = (counts[e.examId] ?? 0) + 1;
+      setMarksByExam(counts);
+    });
   }, [loadExams, loadCandidates]);
 
   // Load evaluations and circuits when exam is selected
@@ -96,6 +105,27 @@ export default function Reports() {
 
   // Everyone with a mark in this exam, roster or not.
   const evaluatedCandidates = examinedCandidates;
+
+  // The same student scored more than once at the same station.
+  //
+  // Nothing stops an examiner scoring a candidate twice — a mis-scan, a
+  // re-scan after a correction, or simply picking the wrong name and fixing it
+  // by doing it again. Both marks are stored, both go into the totals, and
+  // until now nothing anywhere said so. Somebody has to decide which one
+  // counts, and they can only do that if they know it happened.
+  const duplicateMarks = (() => {
+    const byStudentStation = new Map<string, Evaluation[]>();
+    for (const e of evaluations) {
+      const key = `${e.candidateId}|${e.stationId}`;
+      byStudentStation.set(key, [...(byStudentStation.get(key) ?? []), e]);
+    }
+    return [...byStudentStation.values()]
+      .filter((group) => group.length > 1)
+      .map((group) => ({
+        candidate: examinedCandidates.find((c) => c.id === group[0].candidateId),
+        marks: group.sort((a, b) => a.startTime.getTime() - b.startTime.getTime()),
+      }));
+  })();
 
   // Get evaluations for selected candidate
   const candidateEvaluations = evaluations.filter(
@@ -205,6 +235,9 @@ export default function Reports() {
           {exams.map((exam) => (
             <option key={exam.id} value={exam.id}>
               {exam.name}
+              {marksByExam[exam.id]
+                ? ` — ${t('reports.marksCount', { count: marksByExam[exam.id] })}`
+                : ''}
             </option>
           ))}
         </select>
@@ -228,6 +261,12 @@ export default function Reports() {
         )}
       </div>
 
+      {/* Nothing chosen yet. The page below the picker was simply empty, which
+          is indistinguishable from "this exam has no results". */}
+      {!selectedExamId && (
+        <p className="text-sm text-gray-500 text-center py-8">{t('reports.choosePrompt')}</p>
+      )}
+
       {/* Nothing to report yet.
           The page used to render the exam picker and then simply stop, with no
           explanation — which reads as a broken report screen rather than an
@@ -239,6 +278,40 @@ export default function Reports() {
           <p className="text-sm text-gray-500 mt-2 max-w-md mx-auto">
             {t('reports.emptyBody')}
           </p>
+        </div>
+      )}
+
+      {/* One student, one station, two marks. Which counts is not the app's
+          decision to make, but hiding it is not an option either. */}
+      {duplicateMarks.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
+          <p className="text-sm font-medium text-red-900">
+            {t('reports.duplicateTitle', { count: duplicateMarks.length })}
+          </p>
+          <p className="text-sm text-red-900 mt-1">{t('reports.duplicateBody')}</p>
+          <ul className="mt-3 space-y-2 text-sm text-red-900">
+            {duplicateMarks.map(({ candidate, marks }) => (
+              <li key={marks[0].id}>
+                <span className="font-medium">
+                  {candidate?.candidateNumber ?? t('reports.unknownStudent')}
+                </span>
+                {candidate?.name ? ` — ${candidate.name}` : ''}
+                <span className="block text-red-800">
+                  {selectedExam?.stations.find((st) => st.id === marks[0].stationId)?.name ??
+                    marks[0].stationId}
+                  {': '}
+                  {marks
+                    .map(
+                      (m) =>
+                        `${m.totalScore}/${m.maxPossibleScore} (${m.examinerName}, ${new Date(
+                          m.startTime
+                        ).toLocaleTimeString()})`
+                    )
+                    .join('  ·  ')}
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

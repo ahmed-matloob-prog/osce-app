@@ -244,6 +244,12 @@ export default {
 
   // Reports
   reports: {
+    choosePrompt: 'Choose an exam above to see its results.',
+    marksCount: '{{count}} marks',
+    duplicateTitle: '{{count}} student(s) scored more than once at the same station',
+    duplicateBody:
+      'Both marks are stored and both are counted in the totals. Decide which one stands before publishing these results.',
+    unknownStudent: 'Unknown student',
     emptyTitle: 'No marks recorded for this exam yet',
     emptyBody:
       'Reports are built from examiner marks. Once a station has scored its first candidate and that tablet has synced, the results will appear here.',
