@@ -126,6 +126,8 @@ export default {
   },
 
   session: {
+    noCircuits:
+      'This exam has no circuits on this device. Sync it, or create them on the check-in screen — circuits are laid out once for the whole exam.',
     setupTitle: 'Start Exam Session',
     selectExam: 'Select Exam',
     selectCircuit: 'Circuit Number',
@@ -262,6 +264,21 @@ export default {
 
   // Reports
   reports: {
+    cohortReport: 'Cohort Summary',
+    stationReports: 'Station Reports',
+    stationReportTitle: 'Station Report',
+    printPdf: 'Print / Save as PDF',
+    printTitle: 'Print this report',
+    printHint: 'Use the print dialog and choose Save as PDF.',
+    circuitShort: 'Cir',
+    station: 'Station',
+    score: 'Score',
+    global: 'Global',
+    examiner: 'Examiner',
+    total: 'Total',
+    result: 'Result',
+    notes: 'Examiner notes',
+    checklistItem: 'Checklist item',
     correctionTitle: '{{count}} mark(s) were re-scored deliberately',
     correctionBody:
       'The examiner was shown the earlier mark and scored again, so the later one is the intended result. Both are kept.',

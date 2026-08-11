@@ -8,11 +8,10 @@ import type { Station } from '../types';
 export default function SessionSetup() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { exams, circuits, loadExams, loadCircuits, startSession, addCircuit } = useExamStore();
+  const { exams, circuits, loadExams, loadCircuits, startSession } = useExamStore();
 
   const [selectedExamId, setSelectedExamId] = useState('');
   const [selectedCircuitId, setSelectedCircuitId] = useState('');
-  const [circuitNumber, setCircuitNumber] = useState('1');
   const [selectedStationId, setSelectedStationId] = useState('');
   // Read straight into the initial state rather than through an effect, so
   // there is no first render with an empty box before the name appears.
@@ -42,11 +41,10 @@ export default function SessionSetup() {
   }, [selectedExamId, loadCircuits]);
 
   // Derived rather than pushed into state by an effect. With exactly one
-  // circuit that circuit is the only sensible answer; with none, fall through
-  // to creating one. An explicit choice always wins.
+  // circuit that circuit is the only sensible answer, and an explicit choice
+  // always wins. With none, there is nothing to choose — see below.
   const effectiveCircuitId =
-    selectedCircuitId ||
-    (circuits.length === 1 ? circuits[0].id : selectedExamId ? 'new' : '');
+    selectedCircuitId || (circuits.length === 1 ? circuits[0].id : '');
 
   const selectedExam = exams.find((e) => e.id === selectedExamId);
 
@@ -58,19 +56,19 @@ export default function SessionSetup() {
     // Save examiner name for next time
     localStorage.setItem('examinerName', examinerName);
 
-    let circuitId = effectiveCircuitId;
-
-    // Create a new circuit if none exists
-    if (effectiveCircuitId === 'new' || !effectiveCircuitId) {
-      const newCircuit = await addCircuit({
-        examId: selectedExamId,
-        circuitNumber: parseInt(circuitNumber) || 1,
-        name: '',
-        examiners: [],
-        candidateIds: [],
-      });
-      circuitId = newCircuit.id;
-    }
+    // No circuit, no session.
+    //
+    // This used to create one. A device has no circuits for the exam it is
+    // starting for one overwhelmingly common reason — it has not synced yet —
+    // so the situation was "this tablet does not know about your fifteen
+    // circuits" and the response was to invent a sixteenth. Two tablets doing
+    // that produce two different Circuit 1s for one exam, which is the mess
+    // the de-duplication in sync exists to clean up.
+    //
+    // Circuits are laid out once, by whoever runs the exam, from the check-in
+    // screen. An examiner inventing one is never the right answer.
+    const circuitId = effectiveCircuitId;
+    if (!circuitId) return;
 
     await startSession({
       examId: selectedExamId,
@@ -82,7 +80,8 @@ export default function SessionSetup() {
     navigate('/exam/active');
   };
 
-  const canStart = selectedExamId && selectedStationId && examinerName.trim() && (effectiveCircuitId || circuitNumber);
+  const canStart =
+    selectedExamId && selectedStationId && examinerName.trim() && effectiveCircuitId;
 
   // ── Pinned device ────────────────────────────────────────────────────────
   // No pickers. An examiner at station 3 choosing their own circuit is how a
@@ -208,34 +207,19 @@ export default function SessionSetup() {
                   className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
                 >
                   <option value="">-- {t('session.selectCircuit')} --</option>
-                  {circuits.map((circuit) => (
-                    <option key={circuit.id} value={circuit.id}>
-                      Circuit {circuit.circuitNumber} {circuit.name ? `- ${circuit.name}` : ''}
-                    </option>
-                  ))}
-                  <option value="new">+ Create New Circuit</option>
+                  {[...circuits]
+                    .sort((a, b) => a.circuitNumber - b.circuitNumber)
+                    .map((circuit) => (
+                      <option key={circuit.id} value={circuit.id}>
+                        {t('device.circuitN', { number: circuit.circuitNumber })}
+                        {circuit.name ? ` — ${circuit.name}` : ''}
+                      </option>
+                    ))}
                 </select>
               ) : (
-                <input
-                  type="number"
-                  value={circuitNumber}
-                  onChange={(e) => setCircuitNumber(e.target.value)}
-                  min={1}
-                  max={20}
-                  placeholder="Circuit 1"
-                  className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-              )}
-              {effectiveCircuitId === 'new' && (
-                <input
-                  type="number"
-                  value={circuitNumber}
-                  onChange={(e) => setCircuitNumber(e.target.value)}
-                  min={1}
-                  max={20}
-                  placeholder="Enter circuit number"
-                  className="w-full mt-2 border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
+                <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  {t('session.noCircuits')}
+                </p>
               )}
             </div>
           )}

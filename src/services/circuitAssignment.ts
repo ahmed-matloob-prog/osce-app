@@ -136,6 +136,10 @@ export async function distributeIntoCircuits(
       name: '',
       examiners: [],
       candidateIds: [],
+      // Sync decides which copy is newer by this. Circuits made here used
+      // to have none, so the comparison was meaningless for the very rows
+      // that carry the whole cohort.
+      updatedAt: new Date(),
     };
     newCircuits.push(circuit);
     circuitByNumber.set(n, circuit);
@@ -218,6 +222,7 @@ export async function assignCircuitsFromRoster(
       name: '',
       examiners: [],
       candidateIds: [],
+      updatedAt: new Date(),
     };
     newCircuits.push(circuit);
     circuitByNumber.set(number, circuit);

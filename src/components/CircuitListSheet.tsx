@@ -110,7 +110,7 @@ export default function CircuitListSheet({
                         <tr key={candidate.id} className="border-b border-gray-200">
                           <td className="py-1 text-gray-500">{i + 1}</td>
                           <td className="py-1 font-mono">{candidate.candidateNumber}</td>
-                          <td className="py-1">{candidate.name}</td>
+                          <td className="py-1"><bdi>{candidate.name}</bdi></td>
                           <td className="py-1 text-center text-gray-300">☐</td>
                         </tr>
                       ))}

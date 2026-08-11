@@ -122,6 +122,8 @@ export default {
   },
 
   session: {
+    noCircuits:
+      'لا توجد دوائر لهذا الامتحان على هذا الجهاز. زامنه، أو أنشئها من شاشة التسجيل — تُحدَّد الدوائر مرة واحدة للامتحان كله.',
     setupTitle: 'بدء جلسة الامتحان',
     selectExam: 'اختر الامتحان',
     selectCircuit: 'رقم الدائرة',
@@ -258,6 +260,21 @@ export default {
 
   // Reports
   reports: {
+    cohortReport: 'ملخص الدفعة',
+    stationReports: 'تقارير المحطات',
+    stationReportTitle: 'تقرير المحطة',
+    printPdf: 'طباعة / حفظ PDF',
+    printTitle: 'طباعة هذا التقرير',
+    printHint: 'استخدم نافذة الطباعة واختر حفظ بصيغة PDF.',
+    circuitShort: 'الدائرة',
+    station: 'المحطة',
+    score: 'الدرجة',
+    global: 'التقييم العام',
+    examiner: 'الممتحن',
+    total: 'المجموع',
+    result: 'النتيجة',
+    notes: 'ملاحظات الممتحن',
+    checklistItem: 'بند التقييم',
     correctionTitle: '{{count}} درجة أُعيد تقييمها عن قصد',
     correctionBody:
       'عُرضت على الممتحن الدرجة السابقة فاختار التقييم مجدداً، لذا فالدرجة الأحدث هي المقصودة. كلتاهما محفوظتان.',

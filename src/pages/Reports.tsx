@@ -4,13 +4,10 @@ import { useExamStore } from '../stores/examStore';
 import { useCandidateStore } from '../stores/candidateStore';
 import { db } from '../db/schema';
 import { mergeCloudEvaluations } from '../db/sync';
-import {
-  generateStationReport,
-  generateCandidateSummaryReport,
-  generateCohortReport,
-  downloadPDF,
-  previewPDF,
-} from '../services/pdfGenerator';
+import ReportSheet, { type ReportKind } from '../components/ReportSheet';
+// Reports are printed by the browser, not generated with jsPDF — its fonts
+// cannot represent Arabic, and every student here has an Arabic name. See
+// components/ReportSheet.
 import {
   exportCohortToExcel,
   exportCandidateToExcel,
@@ -35,6 +32,10 @@ export default function Reports() {
   const [pulledOffline, setPulledOffline] = useState(false);
   /** Bumped to re-run the loader after a manual refresh. */
   const [refreshKey, setRefreshKey] = useState(0);
+  /** Which report is open for printing, and for which mark. */
+  const [printing, setPrinting] = useState<
+    { kind: ReportKind; evaluation?: Evaluation } | null
+  >(null);
   const [isLoading, setIsLoading] = useState(false);
   const [reportType, setReportType] = useState<'cohort' | 'candidate' | 'station'>('cohort');
 
@@ -157,70 +158,6 @@ export default function Reports() {
   const candidateEvaluations = evaluations.filter(
     (e) => e.candidateId === selectedCandidateId
   );
-
-  // Generate and download cohort report
-  const handleCohortReport = () => {
-    if (!selectedExam || evaluations.length === 0) {
-      alert(t('reports.noData', 'No evaluation data available'));
-      return;
-    }
-
-    const doc = generateCohortReport(selectedExam, evaluatedCandidates, evaluations, circuits);
-    const filename = `${selectedExam.name.replace(/\s+/g, '_')}_Cohort_Report.pdf`;
-    downloadPDF(doc, filename);
-  };
-
-  // Generate and download candidate summary report
-  const handleCandidateReport = () => {
-    if (!selectedExam || !selectedCandidate || candidateEvaluations.length === 0) {
-      alert(t('reports.selectCandidate', 'Please select a candidate with evaluations'));
-      return;
-    }
-
-    const doc = generateCandidateSummaryReport(
-      selectedCandidate,
-      candidateEvaluations,
-      selectedExam,
-      circuits
-    );
-    const filename = `${selectedCandidate.candidateNumber}_${selectedExam.name.replace(/\s+/g, '_')}_Report.pdf`;
-    downloadPDF(doc, filename);
-  };
-
-  // Generate station report for a specific evaluation
-  const handleStationReport = (evaluation: Evaluation) => {
-    if (!selectedExam) return;
-
-    const station = selectedExam.stations.find((s) => s.id === evaluation.stationId);
-    const candidate = candidates.find((c) => c.id === evaluation.candidateId);
-    const circuit = circuits.find((c) => c.id === evaluation.circuitId);
-
-    if (!station || !candidate) {
-      alert(t('reports.dataError', 'Could not find station or candidate data'));
-      return;
-    }
-
-    const doc = generateStationReport(
-      evaluation,
-      candidate,
-      station,
-      selectedExam.name,
-      circuit
-    );
-    const filename = `${candidate.candidateNumber}_Station${station.stationNumber}_Report.pdf`;
-    downloadPDF(doc, filename);
-  };
-
-  // Preview report in new tab
-  const handlePreviewCohortReport = () => {
-    if (!selectedExam || evaluations.length === 0) {
-      alert(t('reports.noData', 'No evaluation data available'));
-      return;
-    }
-
-    const doc = generateCohortReport(selectedExam, evaluatedCandidates, evaluations, circuits);
-    previewPDF(doc);
-  };
 
   // Excel export - Cohort
   const handleCohortExcel = () => {
@@ -467,18 +404,12 @@ export default function Reports() {
               {t('reports.downloadExcel', 'Download Excel')}
             </button>
             <button
-              onClick={handleCohortReport}
+              onClick={() => setPrinting({ kind: 'cohort' })}
               className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-medium transition-colors"
             >
-              {t('reports.downloadPDF', 'Download PDF')}
+              {t('reports.printPdf')}
             </button>
           </div>
-          <button
-            onClick={handlePreviewCohortReport}
-            className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded-lg font-medium transition-colors"
-          >
-            {t('reports.previewPDF', 'Preview PDF')}
-          </button>
         </div>
       )}
 
@@ -519,10 +450,10 @@ export default function Reports() {
                   {t('reports.downloadExcel', 'Download Excel')}
                 </button>
                 <button
-                  onClick={handleCandidateReport}
+                  onClick={() => setPrinting({ kind: 'candidate' })}
                   className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-medium transition-colors"
                 >
-                  {t('reports.downloadPDF', 'Download PDF')}
+                  {t('reports.printPdf')}
                 </button>
               </div>
             </>
@@ -560,10 +491,10 @@ export default function Reports() {
                     </div>
                   </div>
                   <button
-                    onClick={() => handleStationReport(evaluation)}
+                    onClick={() => setPrinting({ kind: 'station', evaluation })}
                     className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors"
                   >
-                    {t('reports.download', 'Download')}
+                    {t('circuitList.print')}
                   </button>
                 </div>
               );
@@ -585,6 +516,22 @@ export default function Reports() {
             {t('reports.hint', 'Complete some evaluations to generate reports')}
           </p>
         </div>
+      )}
+      {printing && selectedExam && (
+        <ReportSheet
+          kind={printing.kind}
+          exam={selectedExam}
+          candidates={evaluatedCandidates}
+          evaluations={evaluations}
+          circuits={circuits}
+          candidate={
+            printing.evaluation
+              ? examinedCandidates.find((c) => c.id === printing.evaluation?.candidateId)
+              : selectedCandidate
+          }
+          evaluation={printing.evaluation}
+          onClose={() => setPrinting(null)}
+        />
       )}
     </div>
   );
