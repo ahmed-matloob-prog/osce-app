@@ -1,6 +1,7 @@
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import type { Candidate, Circuit, ExamTemplate } from '../types';
+import { exportCircuitListsToExcel } from '../services/excelExporter';
 
 /**
  * A printable list of who belongs in each circuit.
@@ -51,8 +52,14 @@ export default function CircuitListSheet({
             </p>
           </div>
           <button
+            onClick={() => exportCircuitListsToExcel(exam, ordered, membersByCircuit)}
+            className="ml-auto border border-gray-300 text-gray-700 hover:bg-gray-50 px-4 py-2 rounded-lg font-medium"
+          >
+            {t('circuitList.excel')}
+          </button>
+          <button
             onClick={() => window.print()}
-            className="ml-auto bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium"
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium"
           >
             {t('circuitList.print')}
           </button>

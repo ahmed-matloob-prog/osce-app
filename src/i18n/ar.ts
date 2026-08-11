@@ -82,6 +82,7 @@ export default {
   },
 
   circuitList: {
+    excel: 'تنزيل Excel',
     title: 'قوائم الدوائر',
     summary: '{{circuits}} دائرة · {{students}} طالب · صفحة لكل دائرة',
     print: 'طباعة',

@@ -83,6 +83,7 @@ export default {
   },
 
   circuitList: {
+    excel: 'Download Excel',
     title: 'Circuit lists',
     summary: '{{circuits}} circuits · {{students}} students · one page each',
     print: 'Print',

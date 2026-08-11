@@ -371,6 +371,78 @@ function createStatisticsSheet(
 /**
  * Export single candidate results to Excel
  */
+/**
+ * The circuit lists, as a spreadsheet.
+ *
+ * The printed sheets are for the doors; this is for everything else — sending
+ * a circuit to the person running it, sorting, or merging with whatever the
+ * registry keeps. Arabic names survive here, which is more than can be said
+ * for the PDF path.
+ *
+ * Both shapes are produced, because both get used: one flat sheet of every
+ * student with their circuit against their name, and then one sheet per
+ * circuit matching the printed pages exactly.
+ */
+export function exportCircuitListsToExcel(
+  exam: ExamTemplate,
+  circuits: Circuit[],
+  membersByCircuit: Map<string, Candidate[]>
+): void {
+  const workbook = XLSX.utils.book_new();
+  const ordered = [...circuits].sort((a, b) => a.circuitNumber - b.circuitNumber);
+
+  // One row per student, circuit against the name. The shape you can sort and
+  // filter.
+  const allRows: (string | number)[][] = [
+    [exam.name],
+    [`Generated: ${new Date().toLocaleDateString()}`],
+    [],
+    ['#', 'College ID', 'Name', 'Circuit', 'Group', 'Stage'],
+  ];
+  let index = 0;
+  for (const circuit of ordered) {
+    for (const candidate of membersByCircuit.get(circuit.id) ?? []) {
+      index += 1;
+      allRows.push([
+        index,
+        candidate.candidateNumber,
+        candidate.name,
+        circuit.circuitNumber,
+        candidate.group ?? '',
+        candidate.stage ?? '',
+      ]);
+    }
+  }
+  const allSheet = XLSX.utils.aoa_to_sheet(allRows);
+  allSheet['!cols'] = [{ wch: 5 }, { wch: 14 }, { wch: 34 }, { wch: 9 }, { wch: 10 }, { wch: 10 }];
+  XLSX.utils.book_append_sheet(workbook, allSheet, 'All students');
+
+  // Then one sheet per circuit, the same content as the printed page.
+  for (const circuit of ordered) {
+    const members = membersByCircuit.get(circuit.id) ?? [];
+    const rows: (string | number)[][] = [
+      [`Circuit ${circuit.circuitNumber}${circuit.name ? ` — ${circuit.name}` : ''}`],
+      [exam.name],
+      [`${members.length} students`],
+      [],
+      ['#', 'College ID', 'Name', 'Present'],
+      ...members.map((candidate, i) => [
+        i + 1,
+        candidate.candidateNumber,
+        candidate.name,
+        '',
+      ]),
+    ];
+    const sheet = XLSX.utils.aoa_to_sheet(rows);
+    sheet['!cols'] = [{ wch: 5 }, { wch: 14 }, { wch: 34 }, { wch: 9 }];
+    // Excel refuses sheet names over 31 characters and a handful of symbols.
+    XLSX.utils.book_append_sheet(workbook, sheet, `Circuit ${circuit.circuitNumber}`);
+  }
+
+  const safeName = exam.name.replace(/[^a-zA-Z0-9؀-ۿ]+/g, '_');
+  XLSX.writeFile(workbook, `${safeName}_Circuit_Lists.xlsx`);
+}
+
 export function exportCandidateToExcel(
   candidate: Candidate,
   exam: ExamTemplate,
