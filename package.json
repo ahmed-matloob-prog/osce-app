@@ -17,7 +17,8 @@
     "test:gate": "node tests/role-gate.mjs",
     "test:reports": "node tests/reports.mjs",
     "test:pwa": "node tests/pwa-update.mjs",
-    "test:duplicate": "node tests/duplicate-scoring.mjs"
+    "test:duplicate": "node tests/duplicate-scoring.mjs",
+    "test:hazards": "node tests/sync-hazards.mjs"
   },
   "dependencies": {
     "dexie": "^4.2.1",

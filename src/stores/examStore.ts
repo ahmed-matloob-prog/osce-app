@@ -87,6 +87,7 @@ export const useExamStore = create<ExamState>((set, get) => ({
     };
     await db.examTemplates.add(exam);
     set((state) => ({ exams: [...state.exams, exam] }));
+    useSyncStore.getState().syncInBackground();
     return exam;
   },
 
@@ -99,6 +100,10 @@ export const useExamStore = create<ExamState>((set, get) => ({
         e.id === id ? { ...e, ...updatedData } : e
       ),
     }));
+    // Send the change now. An admin device rarely has marks waiting, so the
+    // timed retry never fires there, and an edit made mid-exam would otherwise
+    // wait for somebody to reload the page before any tablet saw it.
+    useSyncStore.getState().syncInBackground();
   },
 
   // Delete an exam
@@ -115,6 +120,7 @@ export const useExamStore = create<ExamState>((set, get) => ({
     set((state) => ({
       exams: state.exams.filter((e) => e.id !== id),
     }));
+    useSyncStore.getState().syncInBackground();
   },
 
   // What has been deleted, so it can be reviewed and undone. Deleting an exam
@@ -137,6 +143,7 @@ export const useExamStore = create<ExamState>((set, get) => ({
       exams: restored ? [...state.exams, restored] : state.exams,
       deletedExams: state.deletedExams.filter((e) => e.id !== id),
     }));
+    useSyncStore.getState().syncInBackground();
   },
 
   // Load circuits for an exam

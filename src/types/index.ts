@@ -133,6 +133,13 @@ export interface Candidate {
   /** Soft delete — see the note on ExamTemplate. */
   deleted?: boolean;
   deletedAt?: Date;
+
+  /**
+   * Set when this record was retired as a duplicate of another record for the
+   * same student: the id of the record that replaced it. Marks already sent
+   * under this id stay that way in the cloud, so this is how they are found.
+   */
+  mergedInto?: string;
 }
 
 // Circuit examiner assignment
@@ -189,6 +196,9 @@ export interface Circuit {
   updatedAt?: Date;
   deleted?: boolean;
   deletedAt?: Date;
+
+  /** As on Candidate: the circuit this duplicate was collapsed into. */
+  mergedInto?: string;
 }
 
 // Check-in record for circuit assignment
