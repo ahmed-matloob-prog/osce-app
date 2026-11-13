@@ -1,8 +1,11 @@
 import {
   collection as collection_,
   doc,
+  getDocFromServer,
   getDocs,
+  getDocsFromServer,
   query,
+  setDoc,
   where,
   writeBatch,
   serverTimestamp,
@@ -37,17 +40,45 @@ const COLLECTIONS = {
 } as const;
 
 /**
- * Convert Date to Firestore Timestamp
+ * Anything that has been a date at some point, back as a Date.
+ *
+ * A Firestore Timestamp that reaches IndexedDB without being converted comes
+ * back out as a plain `{ seconds, nanoseconds }` object — the class does not
+ * survive storage. Pushing one of those used to throw inside
+ * `Timestamp.fromDate`, and because it happened mid-sync it took the rest of
+ * the sync down with it: a single pulled deletion date stopped a device
+ * uploading exams, and a single spent backup code stopped it uploading marks.
+ * Devices already holding such values heal on their next sync.
  */
-function toTimestamp(date: Date | undefined): Timestamp | null {
+function asDate(value: unknown): Date | undefined {
+  if (value == null) return undefined;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? undefined : value;
+  if (value instanceof Timestamp) return value.toDate();
+  if (typeof value === 'object' && typeof (value as { seconds?: unknown }).seconds === 'number') {
+    const { seconds, nanoseconds = 0 } = value as { seconds: number; nanoseconds?: number };
+    return new Date(seconds * 1000 + Math.floor(nanoseconds / 1e6));
+  }
+  if (typeof value === 'string' || typeof value === 'number') {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? undefined : date;
+  }
+  return undefined;
+}
+
+/** Convert anything date-like to a Firestore Timestamp, for upload. */
+function toTimestamp(value: unknown): Timestamp | null {
+  const date = asDate(value);
   return date ? Timestamp.fromDate(date) : null;
 }
 
-/**
- * Convert Firestore Timestamp to Date
- */
-function fromTimestamp(timestamp: Timestamp | null | undefined): Date | undefined {
-  return timestamp ? timestamp.toDate() : undefined;
+/** Convert a downloaded Firestore value back to a Date, for IndexedDB. */
+function fromTimestamp(value: unknown): Date | undefined {
+  return asDate(value);
+}
+
+/** A spent backup code keeps its usedAt as a real date, whichever side it came from. */
+function normalizeBackupCodes(codes: BackupCode[] = []): BackupCode[] {
+  return codes.map((code) => ({ ...code, usedAt: asDate(code.usedAt) }));
 }
 
 /**
@@ -79,6 +110,15 @@ export async function syncEvaluationsToCloud(): Promise<{
     };
   }
 
+  const toCloud = (evaluation: Evaluation) =>
+    stripUndefined({
+      ...evaluation,
+      startTime: toTimestamp(evaluation.startTime),
+      endTime: toTimestamp(evaluation.endTime),
+      syncedAt: serverTimestamp(),
+      synced: true,
+    });
+
   try {
     const unsynced = await getUnsyncedEvaluations();
 
@@ -89,35 +129,59 @@ export async function syncEvaluationsToCloud(): Promise<{
     // Use batch writes for efficiency (max 500 per batch)
     const batchSize = 500;
     let syncedCount = 0;
+    const refused: string[] = [];
 
     for (let i = 0; i < unsynced.length; i += batchSize) {
       const batch = writeBatch(firestore);
       const chunk = unsynced.slice(i, i + batchSize);
 
       for (const evaluation of chunk) {
-        const docRef = doc(firestore, COLLECTIONS.evaluations, evaluation.id);
-        batch.set(
-          docRef,
-          stripUndefined({
-            ...evaluation,
-            startTime: toTimestamp(evaluation.startTime),
-            endTime: toTimestamp(evaluation.endTime),
-            syncedAt: serverTimestamp(),
-            synced: true,
-          })
-        );
+        batch.set(doc(firestore, COLLECTIONS.evaluations, evaluation.id), toCloud(evaluation));
       }
 
-      await batch.commit();
+      try {
+        await batch.commit();
+        for (const evaluation of chunk) await markEvaluationSynced(evaluation.id);
+        syncedCount += chunk.length;
+        continue;
+      } catch (error) {
+        // A batch is all-or-nothing, so one mark the rules refuse used to hold
+        // back every other mark in it, on every sync, for good. Retry one at a
+        // time so a single refusal costs only itself.
+        console.warn('Mark batch refused; retrying marks one at a time:', error);
+      }
 
-      // Mark as synced in local DB
       for (const evaluation of chunk) {
-        await markEvaluationSynced(evaluation.id);
+        const ref = doc(firestore, COLLECTIONS.evaluations, evaluation.id);
+        try {
+          await setDoc(ref, toCloud(evaluation));
+          await markEvaluationSynced(evaluation.id);
+          syncedCount++;
+        } catch (error) {
+          // A mark already in the cloud is write-once there. If this device
+          // has since filed it under a merged student or circuit, the upload is
+          // refused — but the cloud already holds the mark, under the id it
+          // was scored against, and readers resolve that id to the survivor.
+          // Nothing is lost by treating it as sent.
+          const exists = await getDocFromServer(ref).then((d) => d.exists(), () => false);
+          if (exists) {
+            await markEvaluationSynced(evaluation.id);
+            syncedCount++;
+          } else {
+            console.error(`Mark ${evaluation.id} could not be uploaded:`, error);
+            refused.push(evaluation.id);
+          }
+        }
       }
-
-      syncedCount += chunk.length;
     }
 
+    if (refused.length > 0) {
+      return {
+        success: false,
+        syncedCount,
+        error: `${refused.length} mark(s) could not be uploaded and are still on this device`,
+      };
+    }
     return { success: true, syncedCount };
   } catch (error) {
     console.error('Sync to cloud failed:', error);
@@ -148,22 +212,16 @@ export async function syncExamsToCloud(exams: ExamTemplate[]): Promise<{
   }
 
   try {
-    const batch = writeBatch(firestore);
-
-    for (const exam of exams) {
-      const docRef = doc(firestore, COLLECTIONS.exams, exam.id);
-      batch.set(
-        docRef,
-        stripUndefined({
-          ...exam,
-          createdAt: toTimestamp(exam.createdAt),
-          deletedAt: toTimestamp(exam.deletedAt),
-          updatedAt: serverTimestamp(),
-        })
-      );
-    }
-
-    await batch.commit();
+    // The exam carries its own updatedAt — the moment it was last edited — not
+    // the moment it happened to be uploaded. Stamping the upload time made
+    // every routine sync from every tablet look like a fresh edit, so an
+    // admin's real change lost to whichever tablet synced before the admin did.
+    await pushCollection(COLLECTIONS.exams, exams, (exam) => ({
+      ...exam,
+      createdAt: toTimestamp(exam.createdAt),
+      deletedAt: toTimestamp(exam.deletedAt),
+      updatedAt: toTimestamp(exam.updatedAt),
+    }));
     return { success: true };
   } catch (error) {
     console.error('Sync exams to cloud failed:', error);
@@ -193,22 +251,14 @@ export async function syncCandidatesToCloud(candidates: Candidate[]): Promise<{
   }
 
   try {
-    const batch = writeBatch(firestore);
-
-    for (const candidate of candidates) {
-      const docRef = doc(firestore, COLLECTIONS.candidates, candidate.id);
-      batch.set(
-        docRef,
-        stripUndefined({
-          ...candidate,
-          registeredAt: toTimestamp(candidate.registeredAt),
-          updatedAt: toTimestamp(candidate.updatedAt),
-          deletedAt: toTimestamp(candidate.deletedAt),
-        })
-      );
-    }
-
-    await batch.commit();
+    // In batches of 500, like every other upload: a roster is institution-wide,
+    // and two cohorts plus retired duplicates pass 500 easily.
+    await pushCollection(COLLECTIONS.candidates, candidates, (candidate) => ({
+      ...candidate,
+      registeredAt: toTimestamp(candidate.registeredAt),
+      updatedAt: toTimestamp(candidate.updatedAt),
+      deletedAt: toTimestamp(candidate.deletedAt),
+    }));
     return { success: true };
   } catch (error) {
     console.error('Sync candidates to cloud failed:', error);
@@ -236,25 +286,24 @@ export async function fetchEvaluationsFromCloud(
     return [];
   }
 
-  try {
-    const evaluationsRef = collection_(firestore, COLLECTIONS.evaluations);
-    const q = query(evaluationsRef, where('examId', '==', examId));
-    const snapshot = await getDocs(q);
+  // From the server, and allowed to fail. With offline persistence on, a plain
+  // getDocs answers from the local cache when the cloud is out of reach, and
+  // the error that was caught here turned "could not ask" into "nobody else
+  // has scored anything" — so Reports never showed its offline warning.
+  const evaluationsRef = collection_(firestore, COLLECTIONS.evaluations);
+  const q = query(evaluationsRef, where('examId', '==', examId));
+  const snapshot = await getDocsFromServer(q);
 
-    return snapshot.docs.map((doc) => {
-      const data = doc.data();
-      return {
-        ...data,
-        id: doc.id,
-        startTime: fromTimestamp(data.startTime),
-        endTime: fromTimestamp(data.endTime),
-        syncedAt: fromTimestamp(data.syncedAt),
-      } as Evaluation;
-    });
-  } catch (error) {
-    console.error('Fetch evaluations from cloud failed:', error);
-    return [];
-  }
+  return snapshot.docs.map((doc) => {
+    const data = doc.data();
+    return {
+      ...data,
+      id: doc.id,
+      startTime: fromTimestamp(data.startTime),
+      endTime: fromTimestamp(data.endTime),
+      syncedAt: fromTimestamp(data.syncedAt),
+    } as Evaluation;
+  });
 }
 
 /**
@@ -283,6 +332,7 @@ export async function fetchExamsFromCloud(): Promise<ExamTemplate[]> {
         id: doc.id,
         createdAt: fromTimestamp(data.createdAt),
         updatedAt: fromTimestamp(data.updatedAt),
+        deletedAt: fromTimestamp(data.deletedAt),
       } as ExamTemplate;
     });
   } catch (error) {
@@ -298,31 +348,33 @@ export async function fetchExamsFromCloud(): Promise<ExamTemplate[]> {
 export async function mergeCloudExamsWithLocal(): Promise<{
   added: number;
   updated: number;
+  /** What the cloud holds, by exam id, as of updatedAt — so the push can skip what it already has. */
+  cloudVersions: Map<string, number>;
 }> {
   const cloudExams = await fetchExamsFromCloud();
+  const cloudVersions = new Map<string, number>();
   let added = 0;
   let updated = 0;
 
   for (const cloudExam of cloudExams) {
+    const cloudTime = cloudExam.updatedAt?.getTime() || 0;
+    cloudVersions.set(cloudExam.id, cloudTime);
     const localExam = await db.examTemplates.get(cloudExam.id);
 
     if (!localExam) {
       // New exam from cloud
       await db.examTemplates.put(cloudExam);
       added++;
-    } else {
-      // Check which is newer
-      const cloudTime = cloudExam.updatedAt?.getTime() || 0;
-      const localTime = localExam.updatedAt?.getTime() || 0;
-
-      if (cloudTime > localTime) {
-        await db.examTemplates.put(cloudExam);
-        updated++;
-      }
+    } else if (cloudTime > (asDate(localExam.updatedAt)?.getTime() || 0)) {
+      await db.examTemplates.put(cloudExam);
+      updated++;
+    } else if (localExam.deletedAt && !(localExam.deletedAt instanceof Date)) {
+      // Written by an earlier version that stored the cloud's Timestamp as-is.
+      await db.examTemplates.update(localExam.id, { deletedAt: asDate(localExam.deletedAt) });
     }
   }
 
-  return { added, updated };
+  return { added, updated, cloudVersions };
 }
 
 /**
@@ -349,50 +401,69 @@ export async function fullSync(): Promise<{
   examsUpdated: number;
   error?: string;
 }> {
+  // Every step below used to be awaited without looking at its result, so an
+  // exam or roster upload could fail on every sync and the screen still said
+  // "synced". And a step that threw ended the whole run before the marks were
+  // sent. Now each failure is recorded and reported, and the run carries on:
+  // getting marks off the tablet matters more than any step before it, and a
+  // mark sent under an id that a later merge retires is still found, because
+  // retired records name their survivor.
+  const problems: string[] = [];
+  const step = async <T,>(name: string, run: () => Promise<T>): Promise<T | undefined> => {
+    try {
+      return await run();
+    } catch (error) {
+      console.error(`Sync step failed: ${name}`, error);
+      problems.push(`${name}: ${error instanceof Error ? error.message : String(error)}`);
+      return undefined;
+    }
+  };
+  const mustSucceed = (result: { success: boolean; error?: string }) => {
+    if (!result.success) throw new Error(result.error ?? 'failed');
+    return result;
+  };
+
   try {
     // The admin PIN first: a tablet being set up needs it before anything
     // else on this list is of any use to whoever is holding it.
-    await syncAdminCredential();
+    await step('admin PIN', syncAdminCredential);
 
-    // Pull exams from cloud
-    const mergeResult = await mergeCloudExamsWithLocal();
-
-    // Push local exams to cloud
-    const localExams = await db.examTemplates.toArray();
-    await syncExamsToCloud(localExams);
+    // Pull exams from cloud, then push only what this device has newer.
+    const mergeResult = await step('exams down', mergeCloudExamsWithLocal);
+    await step('exams up', async () => {
+      if (!mergeResult) throw new Error('skipped: could not read the cloud copy first');
+      const changed = (await db.examTemplates.toArray()).filter(
+        (exam) =>
+          (asDate(exam.updatedAt)?.getTime() || 0) > (mergeResult.cloudVersions.get(exam.id) ?? -1)
+      );
+      if (changed.length > 0) mustSucceed(await syncExamsToCloud(changed));
+    });
 
     // Pull candidates down before pushing, so a tablet that has never seen the
     // roster gets one — and so college IDs are reconciled before this device's
     // own uuids are broadcast.
-    await mergeCloudCandidates();
-
-    // Push candidates to cloud
-    const localCandidates = await db.candidates.toArray();
-    await syncCandidatesToCloud(localCandidates);
+    await step('roster down', mergeCloudCandidates);
+    await step('roster up', async () =>
+      mustSucceed(await syncCandidatesToCloud(await db.candidates.toArray()))
+    );
 
     // Circuits and their assignments, so an examiner's tablet knows which
     // students belong at its station rather than offering the whole cohort.
     // This also collapses circuits two devices created independently.
-    await syncCircuitsAndCheckIns();
+    await step('circuits', syncCircuitsAndCheckIns);
 
     // Marks last — see the note above.
     const evalResult = await syncEvaluationsToCloud();
-
     if (!evalResult.success && !evalResult.error?.includes('not configured')) {
-      return {
-        success: false,
-        evaluationsSynced: 0,
-        examsAdded: mergeResult.added,
-        examsUpdated: mergeResult.updated,
-        error: evalResult.error,
-      };
+      problems.push(`marks: ${evalResult.error ?? 'failed'}`);
     }
 
     return {
-      success: true,
+      success: problems.length === 0,
       evaluationsSynced: evalResult.syncedCount,
-      examsAdded: mergeResult.added,
-      examsUpdated: mergeResult.updated,
+      examsAdded: mergeResult?.added ?? 0,
+      examsUpdated: mergeResult?.updated ?? 0,
+      error: problems.length > 0 ? problems.join('; ') : undefined,
     };
   } catch (error) {
     console.error('Full sync failed:', error);
@@ -512,6 +583,7 @@ export async function syncCircuitsAndCheckIns(): Promise<{
 
   // --- de-duplicate circuits ----------------------------------------------
   const duplicateCircuitsResolved = await dedupeCircuits();
+  await settleMarks();
 
   // --- push ---------------------------------------------------------------
   await pushCollection(COLLECTIONS.circuits, await db.circuits.toArray(), (c) => ({
@@ -578,7 +650,12 @@ export async function mergeCloudEvaluations(examId: string): Promise<{
     .filter((e) => !localIds.has(e.id))
     .map((e) => ({ ...e, synced: true, startTime: e.startTime ?? new Date() }));
 
-  if (missing.length > 0) await db.evaluations.bulkPut(missing);
+  if (missing.length > 0) {
+    await db.evaluations.bulkPut(missing);
+    // A pulled mark carries the ids it was scored against, which may since have
+    // been merged away.
+    await settleMarks();
+  }
   return { added: missing.length, offline: false };
 }
 
@@ -602,7 +679,7 @@ function mergeBackupCodes(a: BackupCode[] = [], b: BackupCode[] = []): BackupCod
     spent.set(code.code, code);
   }
   const newest = a.length >= b.length ? a : b;
-  return newest.map((code) => spent.get(code.code) ?? code);
+  return normalizeBackupCodes(newest.map((code) => spent.get(code.code) ?? code));
 }
 
 export async function syncAdminCredential(): Promise<{ pulled: boolean; pushed: boolean }> {
@@ -611,6 +688,7 @@ export async function syncAdminCredential(): Promise<{ pulled: boolean; pushed: 
   const cloudRows = (await fetchCollection(COLLECTIONS.config)).map((d) => ({
     ...(d as unknown as AdminCredential),
     updatedAt: fromTimestamp(d.updatedAt as Timestamp | null) ?? new Date(0),
+    backupCodes: normalizeBackupCodes((d as unknown as AdminCredential).backupCodes),
   }));
   const cloud = cloudRows.find((row) => row.id === 'admin');
   const local = await db.appConfig.get('admin');
@@ -694,10 +772,71 @@ async function repointCandidate(fromId: string, toId: string): Promise<void> {
     });
   }
 
+  // Marks are refiled here, on this device, and nothing more. One that has not
+  // been sent yet goes up under the survivor's id. One that has been sent stays
+  // as the cloud has it — the rules make a sent mark write-once, and asking to
+  // change it used to be refused on every sync, holding back every other mark
+  // in the same batch with it. The retired record names its survivor, so any
+  // device that pulls the mark files it correctly too (see settleMarks).
   const evaluations = await db.evaluations.filter((e) => e.candidateId === fromId).toArray();
   for (const evaluation of evaluations) {
-    await db.evaluations.update(evaluation.id, { candidateId: toId, synced: false });
+    await db.evaluations.update(evaluation.id, { candidateId: toId });
   }
+}
+
+/**
+ * Follow retired records to the record that replaced them. Chains are followed
+ * to the end — a record retired into one that was itself later retired.
+ */
+function survivorMap(
+  rows: { id: string; deleted?: boolean; mergedInto?: string }[]
+): Map<string, string> {
+  const next = new Map<string, string>();
+  for (const row of rows) {
+    if (row.deleted && row.mergedInto) next.set(row.id, row.mergedInto);
+  }
+  const resolved = new Map<string, string>();
+  for (const start of next.keys()) {
+    let id = start;
+    const seen = new Set<string>();
+    while (next.has(id) && !seen.has(id)) {
+      seen.add(id);
+      id = next.get(id)!;
+    }
+    if (id !== start) resolved.set(start, id);
+  }
+  return resolved;
+}
+
+/**
+ * File every mark on this device under the live student and circuit records.
+ *
+ * A mark in the cloud keeps the ids it was scored against, forever. When two
+ * devices' records for one student or one circuit are merged, the retired one
+ * records `mergedInto`, and this resolves marks against it — whether they were
+ * scored here, refiled by a merge here, or pulled down from another device.
+ * Without it, a mark pulled for a report could sit on a retired record and show
+ * the student as "MERGED-…", or as missing.
+ *
+ * The local copy of a sent mark may therefore name a different id from the
+ * cloud copy. That is intended; the cloud copy is what was recorded, and the
+ * local copy is what it means now.
+ */
+async function settleMarks(): Promise<number> {
+  const candidateSurvivor = survivorMap(await db.candidates.toArray());
+  const circuitSurvivor = survivorMap(await db.circuits.toArray());
+  if (candidateSurvivor.size === 0 && circuitSurvivor.size === 0) return 0;
+
+  const moved: Evaluation[] = [];
+  for (const mark of await db.evaluations.toArray()) {
+    const candidateId = candidateSurvivor.get(mark.candidateId) ?? mark.candidateId;
+    const circuitId = circuitSurvivor.get(mark.circuitId) ?? mark.circuitId;
+    if (candidateId !== mark.candidateId || circuitId !== mark.circuitId) {
+      moved.push({ ...mark, candidateId, circuitId });
+    }
+  }
+  if (moved.length > 0) await db.evaluations.bulkPut(moved);
+  return moved.length;
 }
 
 /**
@@ -716,6 +855,7 @@ async function retireDuplicateCandidate(
   await db.candidates.put({
     ...duplicate,
     candidateNumber: `MERGED-${duplicate.id.slice(0, 8)}`,
+    mergedInto: survivorId,
     deleted: true,
     deletedAt: now,
     updatedAt: now,
@@ -802,6 +942,10 @@ export async function mergeCloudCandidates(): Promise<{
     });
   }
 
+  // A retirement can also arrive ready-made from the cloud, replacing a record
+  // this device still had marks on, without passing through the merge above.
+  await settleMarks();
+
   return { added, updated, duplicatesResolved };
 }
 
@@ -848,12 +992,18 @@ export async function dedupeCircuits(): Promise<number> {
         if (!duplicate) winnerCandidates.add(checkIn.candidateId);
       }
 
+      // Refiled locally only — a sent mark is write-once. See repointCandidate.
       const evaluations = await db.evaluations.filter((e) => e.circuitId === loser.id).toArray();
       for (const evaluation of evaluations) {
-        await db.evaluations.update(evaluation.id, { circuitId: winner.id, synced: false });
+        await db.evaluations.update(evaluation.id, { circuitId: winner.id });
       }
 
-      await db.circuits.update(loser.id, { deleted: true, deletedAt: now, updatedAt: now });
+      await db.circuits.update(loser.id, {
+        deleted: true,
+        deletedAt: now,
+        updatedAt: now,
+        mergedInto: winner.id,
+      });
       resolved++;
     }
   }
