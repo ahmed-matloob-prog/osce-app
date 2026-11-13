@@ -141,6 +141,26 @@ check('the later one names the earlier', Boolean(later), true);
 check('and it names the right one',
   afterSecond.some((e) => e.id === later?.supersedes), true);
 
+console.log('\n3b. The rest of the circuit never came: end the session from the student list');
+// Between students the picker covers the whole screen, header included. It has
+// to offer End Session itself, or an examiner with absent students is stuck.
+const picker = page.locator('div.fixed').filter({ hasText: 'Select Candidate' }).last();
+check('the student list is showing', await picker.isVisible(), true);
+const endFromPicker = picker.getByRole('button', { name: /End Session/i });
+check('and it offers End Session', await endFromPicker.isVisible(), true);
+await endFromPicker.click();
+await page.waitForTimeout(2500);
+const activeSessions = await page.evaluate(() => new Promise((r) => {
+  const q = indexedDB.open('OSCEDatabase');
+  q.onsuccess = () => {
+    const a = q.result.transaction('examSessions', 'readonly').objectStore('examSessions').getAll();
+    a.onsuccess = () => r(a.result.filter((s) => s.isActive).length);
+  };
+}));
+check('the session is ended', activeSessions, 0);
+check('the tablet is back at its station start screen',
+  new URL(page.url()).pathname.startsWith('/session/setup'), true);
+
 console.log('\n4. The report calls it a correction, not an accident');
 await page.evaluate(F.asAdminDevice);
 await page.goto(`${BASE}/reports`, { waitUntil: 'domcontentloaded' });

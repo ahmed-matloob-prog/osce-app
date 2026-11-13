@@ -82,7 +82,9 @@ function createSummarySheet(
     }
     header.push(`S${station.stationNumber} Examiner`);
   }
-  header.push('Total Score', 'Total Max', 'Total %', 'Result');
+  // No Result column: pass marks come from borderline regression on the
+  // global ratings above, done after the exam, not from a fixed cut-off.
+  header.push('Total Score', 'Total Max', 'Total %');
   rows.push(header);
 
   // Data rows
@@ -127,12 +129,10 @@ function createSummarySheet(
     }
 
     const totalPct = totalMax > 0 ? ((totalScore / totalMax) * 100).toFixed(1) : '0';
-    const passed = parseFloat(totalPct) >= 50;
 
     row.push(totalScore);
     row.push(totalMax);
     row.push(`${totalPct}%`);
-    row.push(passed ? 'PASS' : 'FAIL');
 
     rows.push(row);
   }
@@ -302,13 +302,10 @@ function createStatisticsSheet(
   }
 
   const percentages: number[] = [];
-  let passCount = 0;
 
   for (const result of candidateResults.values()) {
     if (result.max > 0) {
-      const pct = (result.total / result.max) * 100;
-      percentages.push(pct);
-      if (pct >= 50) passCount++;
+      percentages.push((result.total / result.max) * 100);
     }
   }
 
@@ -318,14 +315,12 @@ function createStatisticsSheet(
     : 0;
   const minScore = totalCandidates > 0 ? Math.min(...percentages) : 0;
   const maxScore = totalCandidates > 0 ? Math.max(...percentages) : 0;
-  const passRate = totalCandidates > 0 ? (passCount / totalCandidates) * 100 : 0;
 
+  // No pass rate: there is no fixed pass mark to count against. It is set per
+  // station afterwards by borderline regression.
   rows.push(['Metric', 'Value']);
   rows.push(['Total Candidates', totalCandidates]);
   rows.push(['Total Evaluations', evaluations.length]);
-  rows.push(['Pass Rate', `${passRate.toFixed(1)}%`]);
-  rows.push(['Candidates Passed', passCount]);
-  rows.push(['Candidates Failed', totalCandidates - passCount]);
   rows.push(['Average Score', `${avgScore.toFixed(1)}%`]);
   rows.push(['Highest Score', `${maxScore.toFixed(1)}%`]);
   rows.push(['Lowest Score', `${minScore.toFixed(1)}%`]);
@@ -500,7 +495,6 @@ export function exportCandidateToExcel(
   rows.push([]);
   const totalPct = totalMax > 0 ? ((totalScore / totalMax) * 100).toFixed(1) : '0';
   rows.push(['TOTAL', '', '', totalScore, totalMax, `${totalPct}%`, '', '']);
-  rows.push(['RESULT', '', '', parseFloat(totalPct) >= 50 ? 'PASS' : 'FAIL', '', '', '', '']);
 
   const sheet = XLSX.utils.aoa_to_sheet(rows);
   XLSX.utils.book_append_sheet(workbook, sheet, 'Results');
