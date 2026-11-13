@@ -210,7 +210,8 @@ export default function ReportSheet({
                       </th>
                     ))}
                     <th className="py-1 w-20 text-center">{t('reports.total')}</th>
-                    <th className="py-1 w-16 text-center">{t('reports.result')}</th>
+                    {/* No pass/fail column: the pass mark is set afterwards by
+                        borderline regression, not by a fixed cut-off. */}
                   </tr>
                 </thead>
                 <tbody>
@@ -234,9 +235,6 @@ export default function ReportSheet({
                         })}
                         <td className="py-1 text-center font-medium">
                           {totals.max > 0 ? `${totals.score}/${totals.max}` : '-'}
-                        </td>
-                        <td className="py-1 text-center font-semibold">
-                          {totals.max > 0 ? (totals.percent >= 50 ? 'PASS' : 'FAIL') : '-'}
                         </td>
                       </tr>
                     );
@@ -299,9 +297,6 @@ export default function ReportSheet({
                       <div className="mt-4 pt-3 border-t-2 border-gray-800 flex items-baseline justify-between">
                         <span className="font-semibold">
                           {t('reports.total')}: {totals.score}/{totals.max} ({totals.percent}%)
-                        </span>
-                        <span className="text-lg font-bold">
-                          {totals.max > 0 ? (totals.percent >= 50 ? 'PASS' : 'FAIL') : '-'}
                         </span>
                       </div>
                     );

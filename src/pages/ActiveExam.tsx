@@ -696,12 +696,24 @@ export default function ActiveExam() {
               </button>
             </div>
 
-            <button
-              onClick={() => navigate('/session/setup')}
-              className="mt-4 text-gray-500 hover:text-gray-700"
-            >
-              {t('common.back')}
-            </button>
+            {/* End Session lives here too. Between students this picker
+                covers the whole screen, header included, so an examiner whose
+                circuit was half absent had to open a student just to reach
+                the button. */}
+            <div className="mt-4 flex items-center justify-between">
+              <button
+                onClick={() => navigate('/session/setup')}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                {t('common.back')}
+              </button>
+              <button
+                onClick={handleEndSession}
+                className="px-4 py-2 border border-red-200 text-red-700 rounded-lg font-medium hover:bg-red-50 transition-colors"
+              >
+                {t('session.endSession')}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -900,19 +912,10 @@ export default function ActiveExam() {
                   </span>
                 </div>
               </div>
-              <div className={`text-sm font-medium px-3 py-1 rounded-full ${
-                currentEvaluation.totalScore / currentEvaluation.maxPossibleScore >= 0.6
-                  ? 'bg-green-100 text-green-700'
-                  : currentEvaluation.totalScore / currentEvaluation.maxPossibleScore >= 0.5
-                  ? 'bg-yellow-100 text-yellow-700'
-                  : 'bg-red-100 text-red-700'
-              }`}>
-                {currentEvaluation.totalScore / currentEvaluation.maxPossibleScore >= 0.6
-                  ? 'PASS'
-                  : currentEvaluation.totalScore / currentEvaluation.maxPossibleScore >= 0.5
-                  ? 'BORDERLINE'
-                  : 'FAIL'}
-              </div>
+              {/* No pass/fail label here. The pass mark is set afterwards by
+                  borderline regression across all examiners' global ratings,
+                  so a fixed cut-off at the station would be wrong, and could
+                  sway the examiner's own global rating. */}
             </div>
 
             <button
