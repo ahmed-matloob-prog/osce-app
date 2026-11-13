@@ -5,6 +5,7 @@ import { useExamStore } from '../stores/examStore';
 import type { ExamTemplate } from '../types';
 import PinModal from '../components/PinModal';
 import { verifyPin, getDeviceId } from '../utils/pinUtils';
+import { newCardSecret } from '../utils/stationCard';
 
 export default function Exams() {
   const { t } = useTranslation();
@@ -240,6 +241,30 @@ export default function Exams() {
                 </Link>
 
                 <div className="flex items-center gap-2 ml-4">
+                  {/* Open for examining. Only open exams are offered to a
+                      station set up by hand, and a scanned card for a closed
+                      exam is refused — so on exam day nothing but today's
+                      exam is in front of an examiner. */}
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      updateExam(exam.id, {
+                        openForExamining: !exam.openForExamining,
+                        cardSecret: exam.cardSecret ?? newCardSecret(),
+                      });
+                    }}
+                    aria-pressed={Boolean(exam.openForExamining)}
+                    title={t('exams.openHint')}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+                      exam.openForExamining
+                        ? 'bg-green-100 text-green-800 hover:bg-green-200'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    {exam.openForExamining ? `● ${t('exams.open')}` : t('exams.closed')}
+                  </button>
+
                   {/* Lock/Unlock Button - only for PIN protected exams */}
                   {exam.pinEnabled && (
                     <button

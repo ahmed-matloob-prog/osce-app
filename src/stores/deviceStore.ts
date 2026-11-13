@@ -23,7 +23,8 @@ import { db } from '../db/schema';
  * list, not safety.
  *
  * So a fresh device has no role at all and is asked what it is for before it
- * will do anything. Examiner and check-in are one tap. Admin costs a PIN.
+ * will do anything. An examiner scans the printed station card; setting any
+ * role up by hand, and releasing a pinned device, costs the admin PIN.
  *
  * ── This is not access control ──────────────────────────────────────────────
  *
@@ -110,9 +111,9 @@ interface DeviceState {
   needsRole: () => boolean;
   assign: (input: AssignInput) => Promise<void>;
   becomeAdmin: () => void;
-  /** Hand the device back to the chooser. Free — going *up* to admin is what
-   *  costs a PIN, and an examiner who lands back on the gate has gained
-   *  nothing they did not already have. */
+  /** Hand the device back to the chooser. The PIN is asked for by the caller
+   *  (the pinned bar): the chooser can set a device up for any open exam by
+   *  hand, so leaving a station is no longer free. */
   release: () => void;
   reconcile: () => Promise<void>;
 }

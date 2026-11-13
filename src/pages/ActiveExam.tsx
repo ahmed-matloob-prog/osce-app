@@ -39,7 +39,15 @@ export default function ActiveExam() {
     setNotes,
     submitEvaluation,
     endSession,
+    resumeSession,
   } = useExamStore();
+  // After a reload the session is only in the database. Look there before
+  // telling the examiner there is none.
+  const [resumeChecked, setResumeChecked] = useState(Boolean(currentSession));
+  useEffect(() => {
+    if (resumeChecked) return;
+    resumeSession().finally(() => setResumeChecked(true));
+  }, [resumeChecked, resumeSession]);
   const { candidates, loadCandidates } = useCandidateStore();
   const { checkIns, loadAllCheckInsForExam } = useCheckInStore();
   const { isOnline, pendingCount } = useSyncStore();
@@ -329,6 +337,8 @@ export default function ActiveExam() {
 
     navigate('/');
   };
+
+  if (!currentSession && !resumeChecked) return null;
 
   // No active session
   if (!currentSession) {

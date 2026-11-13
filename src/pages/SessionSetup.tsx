@@ -1,9 +1,13 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useExamStore } from '../stores/examStore';
 import { useDeviceStore } from '../stores/deviceStore';
 import type { Station } from '../types';
+import ClearDeviceCard from '../components/ClearDeviceCard';
+import { parseCard } from '../utils/stationCard';
+
+const QRScanner = lazy(() => import('../components/scanner/QRScanner'));
 
 export default function SessionSetup() {
   const { t } = useTranslation();
@@ -19,9 +23,27 @@ export default function SessionSetup() {
     () => localStorage.getItem('examinerName') ?? ''
   );
   const [starting, setStarting] = useState(false);
+  const [scanning, setScanning] = useState(false);
 
   const assignment = useDeviceStore((s) => s.assignment);
   const isStation = assignment.role === 'examiner';
+
+  // The page reloaded mid-session (a phone does this to background tabs):
+  // take the examiner straight back to scoring. Not when they came here on
+  // purpose with Back — then the session is still in memory.
+  useEffect(() => {
+    if (!isStation || useExamStore.getState().currentSession) return;
+    let cancelled = false;
+    useExamStore
+      .getState()
+      .resumeSession()
+      .then((session) => {
+        if (session && !cancelled) navigate('/exam/active', { replace: true });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isStation, navigate]);
 
   useEffect(() => {
     loadExams();
@@ -149,7 +171,33 @@ export default function SessionSetup() {
               <p className="mt-3">{t('device.notReadyHint')}</p>
             </div>
           )}
+
+          {/* Wrong card, or moved to another station: scan the right one.
+              Needs no PIN, and the card screen refuses mid-session. */}
+          <button
+            onClick={() => setScanning(true)}
+            className="mt-4 text-sm text-blue-700 hover:text-blue-800 underline underline-offset-2"
+          >
+            {t('card.scanDifferent')}
+          </button>
         </div>
+
+        <ClearDeviceCard />
+
+        {scanning && (
+          <Suspense fallback={null}>
+            <QRScanner
+              onScan={(text) => {
+                const card = parseCard(text);
+                if (!card) return;
+                setScanning(false);
+                const url = new URL(text.trim(), window.location.origin);
+                window.location.assign(`${url.pathname}${url.search}`);
+              }}
+              onClose={() => setScanning(false)}
+            />
+          </Suspense>
+        )}
       </div>
     );
   }

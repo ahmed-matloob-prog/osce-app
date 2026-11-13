@@ -196,4 +196,10 @@ button, .btn {
     break-inside: avoid;
     page-break-inside: avoid;
   }
+
+  /* A station card cut in half cannot be scanned. */
+  .station-card {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
 }
