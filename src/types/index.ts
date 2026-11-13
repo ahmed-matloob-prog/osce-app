@@ -81,6 +81,26 @@ export interface ExamTemplate {
    */
   deleted?: boolean;
   deletedAt?: Date;
+
+  /**
+   * Whether stations may be set up for this exam right now.
+   *
+   * Closed by default — including every exam created before this existed — so
+   * that the station chooser and the printed cards only ever offer the exam
+   * being run today, not every exam the institution has ever written. A device
+   * already pinned to an exam is not thrown off when it closes.
+   */
+  openForExamining?: boolean;
+
+  /**
+   * Random value the check code on each printed station card is derived from,
+   * so a card cannot be edited into one for another circuit or station.
+   *
+   * It syncs like the rest of the exam, so anyone able to read the raw
+   * database can read it too. It stops a hand-edited link, not a technical
+   * person — the same honest limit as everything else on the device.
+   */
+  cardSecret?: string;
 }
 
 // Candidate

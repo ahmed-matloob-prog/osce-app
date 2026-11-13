@@ -36,8 +36,20 @@ export const exam = {
     ],
   }],
   pinEnabled: false, isLocked: false,
+  // Open, with a known card secret, so suites can set stations up from a card
+  // or from the chooser. tests/station-cards.mjs strips both to start closed.
+  openForExamining: true, cardSecret: 'fixture-card-secret-0001',
   createdAt: new Date(), updatedAt: new Date(),
 };
+
+/** The station-card link for the fixture exam, as a printed card would carry it. */
+export async function cardPathFor(circuitNumber, stationId = 'st-1') {
+  const { createHash } = await import('node:crypto');
+  const k = createHash('sha256')
+    .update(`${exam.cardSecret}|${exam.id}|${circuitNumber}|${stationId}`)
+    .digest('hex').slice(0, 10).toUpperCase();
+  return `/station?${new URLSearchParams({ e: exam.id, c: String(circuitNumber), s: stationId, k })}`;
+}
 
 export const candidate = (id, number, name) => ({
   id, candidateNumber: number, name, examIds: [EXAM_ID], updatedAt: new Date(),

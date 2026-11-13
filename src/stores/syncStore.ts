@@ -17,6 +17,8 @@ interface SyncState extends SyncStatus {
    */
   autoSync: boolean;
   firebaseConfigured: boolean;
+  /** initializeSync has finished, so firebaseConfigured is known. */
+  initialized: boolean;
   lastSyncResult: {
     evaluationsSynced: number;
     examsAdded: number;
@@ -44,6 +46,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
   isSyncing: false,
   autoSync: true,
   firebaseConfigured: false,
+  initialized: false,
   lastSyncResult: null,
   syncError: null,
 
@@ -59,6 +62,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     if (configured) {
       await initializeFirebase();
     }
+    set({ initialized: true });
   },
 
   setAutoSync: async (enabled) => {
@@ -149,6 +153,23 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     set({ lastSyncAt: date });
   },
 }));
+
+/**
+ * Wait for one complete sync, for a screen that cannot proceed without the
+ * latest data — a station card scanned on a phone that has never seen the exam.
+ * Lets the startup sync finish first, then runs one of its own so a change
+ * made a moment ago on the admin device is included. Gives up at the deadline
+ * rather than hang; the caller checks what it has.
+ */
+export async function syncOnceAndWait(timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  while (!useSyncStore.getState().initialized && Date.now() < deadline) await sleep(150);
+  while (useSyncStore.getState().isSyncing && Date.now() < deadline) await sleep(150);
+  const left = deadline - Date.now();
+  if (left <= 0) return;
+  await Promise.race([useSyncStore.getState().syncNow(), sleep(left)]);
+}
 
 // Set up online/offline listeners
 export async function initSyncListeners() {

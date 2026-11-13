@@ -53,6 +53,13 @@ export default {
   },
 
   gate: {
+    byHandNeedsPin: 'Setting up by hand needs the admin PIN.',
+    enterPinByHandBody: 'Setting a station or desk up by hand shows the list of exams, so it needs the admin PIN.',
+    noPinHereTitle: 'No admin PIN on this device yet',
+    noPinHereBody:
+      'Examiners: scan your station card instead. Organisers: connect this device to the internet so it learns the PIN, or set one up from an admin device first.',
+    noOpenExams:
+      'No exam is open for examining. On an admin device, open today\'s exam from the Exams page.',
     title: 'What is this tablet for?',
     subtitle: 'Choose once. You can change it later.',
     examinerBody: 'Score students at one station, in one circuit. Nothing else.',
@@ -82,6 +89,64 @@ export default {
     badBackupCode: 'That code is not valid, or it has already been used.',
   },
 
+  card: {
+    gateTitle: 'Examiner? Scan your station card',
+    gateBody: 'The card at your station sets this device up for that station. No PIN needed.',
+    scan: 'Scan station card',
+    organisersOnly: 'For organisers',
+    notACard: 'That is not a station card.',
+    checking: 'Setting up your station…',
+    checkingBody: 'Getting the exam onto this device. This needs the internet the first time.',
+    tryAgain: 'Try again',
+    backToDevice: 'Back',
+    busyTitle: 'A session is still running here',
+    busyBody: 'This device is in the middle of a session ({{where}}). End that session first, then scan the card again.',
+    unknownTitle: 'This exam is not on this device yet',
+    unknownBody:
+      'Connect to the exam Wi-Fi and try again. If it still fails, the organiser\'s device may not have synced since the cards were printed.',
+    closedTitle: 'This exam is not open',
+    closedBody: '{{exam}} is closed for examining. Ask the organiser to open it, then try again.',
+    badCodeTitle: 'Card not recognised',
+    badCodeBody:
+      'This card does not match the exam — it may be from an older printing. Ask the organiser for a new card.',
+    noStationTitle: 'This station no longer exists',
+    noStationBody: 'The station on this card has been removed from the exam. Ask the organiser.',
+    noCircuitTitle: 'Circuit {{number}} does not exist yet',
+    noCircuitBody: 'The organiser has not laid out this circuit, or this device has not synced it yet.',
+    adminWarning:
+      'This is an admin device. Continuing turns it into this station; turning it back needs the admin PIN.',
+    useStation: 'Start at this station',
+    wrongCard: 'Not your station? Go back and scan the right card.',
+    scanDifferent: 'Wrong station? Scan the right card',
+    sheetTitle: 'Station cards',
+    sheetSummary: '{{circuits}} circuits × {{stations}} stations · one circuit per page',
+    examClosedWarning:
+      'This exam is closed. Cards will be refused until you open it on the Exams page.',
+    preparing: 'Preparing cards…',
+    qrAlt: 'Card for circuit {{number}}, {{station}}',
+    printedHowTo: 'Scan with your phone camera, or tap “Scan station card” in the OSCE app.',
+  },
+
+  clear: {
+    title: 'Finished for the day?',
+    body: 'Clear this device removes the exam, the student list and the marks from it. Use it on your own phone before you leave.',
+    unsent: '{{count}} mark(s) have not reached the cloud yet. Connect to the exam Wi-Fi and send them before clearing.',
+    allSent: 'All marks from this device have reached the cloud.',
+    sendNow: 'Send now',
+    sending: 'Sending…',
+    backup: 'Save backup file',
+    action: 'Clear this device',
+    confirm:
+      'Remove the exam, the student list and the marks from this device?\n\nYour marks are safe in the cloud. This cannot be undone on this device.',
+    stillUnsent: '{{count}} mark(s) still have not reached the cloud. Nothing was cleared.',
+    sessionActive: 'A session is still running. End it first.',
+    working: 'Clearing this device…',
+    doneTitle: 'This device has been cleared',
+    doneBody: 'The exam, the student list and the marks have been removed from it.',
+    closeNow: 'You can close this page now.',
+    useAgain: 'Set this device up again',
+  },
+
   circuitList: {
     excel: 'Download Excel',
     title: 'Circuit lists',
@@ -96,6 +161,8 @@ export default {
   },
 
   device: {
+    releaseTitle: 'Release this device',
+    releaseBody: 'Needs the admin PIN. To set up a different station, scan its card instead.',
     title: 'This device',
     intro:
       'Give this tablet one job for the day. It will show only the screen it needs.',
@@ -243,6 +310,9 @@ export default {
 
   // Exams Management
   exams: {
+    open: 'Open for examining',
+    closed: 'Closed',
+    openHint: 'Only open exams can be chosen at a station or reached with a station card.',
     title: 'Exam Templates',
     createExam: 'Create Exam',
     editExam: 'Edit Exam',

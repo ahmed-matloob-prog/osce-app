@@ -1,19 +1,25 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useExamStore } from '../stores/examStore';
 import { useDeviceStore } from '../stores/deviceStore';
 import { useAdminStore } from '../stores/adminStore';
+import { useSyncStore } from '../stores/syncStore';
+import { parseCard } from '../utils/stationCard';
 import { isValidPinFormat } from '../utils/pinUtils';
 import BackupCodesModal from './BackupCodesModal';
 import { buildLabel, isNonProductionBuild } from '../build-info';
 
+const QRScanner = lazy(() => import('./scanner/QRScanner'));
+
 /**
  * The front door.
  *
- * A tablet does nothing until somebody says what it is for. Examiner and
- * check-in are one tap, because those are the safe answers and the ones needed
- * fourteen times over on exam morning. Admin costs a PIN, because that is the
- * branch that can delete an exam.
+ * A tablet does nothing until somebody says what it is for.
+ *
+ * The examiner's way in is the printed station card: scan it and the device is
+ * set up for that one station, with no PIN and no list of exams to read or
+ * choose wrongly from. Setting a station or a check-in desk up *by hand* shows
+ * the exam list, so it costs the admin PIN, as admin itself does.
  *
  * The PIN is set once, on the first device, and travels to the others with
  * everything else — nobody types it into fifteen tablets.
@@ -42,18 +48,43 @@ export default function RoleGate() {
   const [newCodes, setNewCodes] = useState<string[] | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  /** The PIN has been given for setting a station or desk up by hand. */
+  const [unlocked, setUnlocked] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState('');
 
+  // Again after every sync: a fresh device learns the PIN and the exams from
+  // its first one, and must not keep offering what it knew before it.
+  const lastSyncAt = useSyncStore((s) => s.lastSyncAt);
   useEffect(() => {
     loadExams();
     load();
-  }, [loadExams, load]);
+  }, [loadExams, load, lastSyncAt]);
+
+  // Only exams open for examining are offered. With exactly one open - the
+  // usual exam day - it is chosen already.
+  const openExams = exams.filter((e) => e.openForExamining);
+  const effectiveExamId = examId || (openExams.length === 1 ? openExams[0].id : '');
 
   useEffect(() => {
-    if (examId) loadCircuits(examId);
-  }, [examId, loadCircuits]);
+    if (effectiveExamId) loadCircuits(effectiveExamId);
+  }, [effectiveExamId, loadCircuits]);
 
-  const exam = exams.find((e) => e.id === examId);
+  const exam = openExams.find((e) => e.id === effectiveExamId);
   const hasPin = Boolean(credential?.pinHash);
+
+  const handleScan = (text: string) => {
+    const card = parseCard(text);
+    if (!card) {
+      setScanError(t('card.notACard'));
+      return;
+    }
+    setScanning(false);
+    // A full load of the card link, exactly as if the phone's camera had
+    // opened it, so there is one path through the card screen, not two.
+    const url = new URL(text.trim(), window.location.origin);
+    window.location.assign(`${url.pathname}${url.search}`);
+  };
 
   const field =
     'w-full border border-gray-300 rounded-lg px-4 py-3 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500';
@@ -94,9 +125,26 @@ export default function RoleGate() {
           <h1 className="text-2xl font-bold text-gray-900 text-center">{t('gate.title')}</h1>
           <p className="text-gray-500 text-center mt-2 mb-6">{t('gate.subtitle')}</p>
 
+          <div className="bg-blue-600 text-white rounded-2xl p-5 mb-5">
+            <h2 className="font-semibold text-lg">{t('card.gateTitle')}</h2>
+            <p className="text-sm text-blue-100 mt-1">{t('card.gateBody')}</p>
+            <button
+              onClick={() => {
+                setScanError('');
+                setScanning(true);
+              }}
+              className="mt-4 w-full bg-white text-blue-700 hover:bg-blue-50 py-3 rounded-xl font-semibold"
+            >
+              📷 {t('card.scan')}
+            </button>
+          </div>
+
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+            {t('card.organisersOnly')}
+          </p>
           <div className="space-y-3">
-            {card('examiner', '🩺', t('device.station'), t('gate.examinerBody'))}
-            {card('checkin', '✅', t('device.checkInDesk'), t('gate.checkInBody'))}
+            {card('examiner', '🩺', t('device.station'), t('gate.examinerBody'), t('gate.byHandNeedsPin'))}
+            {card('checkin', '✅', t('device.checkInDesk'), t('gate.checkInBody'), t('gate.byHandNeedsPin'))}
             {card(
               'admin',
               '⚙️',
@@ -118,14 +166,47 @@ export default function RoleGate() {
             </p>
           )}
         </div>
+
+        {scanning && (
+          <Suspense fallback={null}>
+            <QRScanner onScan={handleScan} onClose={() => setScanning(false)} />
+          </Suspense>
+        )}
+        {scanError && (
+          <div className="fixed bottom-4 left-4 right-4 z-[60] max-w-md mx-auto bg-red-600 text-white rounded-xl p-3 text-sm text-center">
+            {scanError}
+          </div>
+        )}
       </div>
     );
   }
 
-  // ── Admin ────────────────────────────────────────────────────────────────
-  if (choice === 'admin') {
+  // ── By hand, on a device that has never received the PIN ────────────────
+  // There is nothing to check a PIN against, and letting them through would
+  // put every exam in front of whoever is holding it the moment it syncs.
+  if (choice !== 'admin' && !unlocked && loaded && !hasPin) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="w-full max-w-sm bg-white rounded-2xl border border-gray-200 p-6">
+          <h1 className="text-xl font-bold text-gray-900">{t('gate.noPinHereTitle')}</h1>
+          <p className="text-sm text-gray-600 mt-2">{t('gate.noPinHereBody')}</p>
+          <button
+            onClick={() => setChoice(null)}
+            className="mt-5 text-sm text-gray-500 hover:text-gray-700"
+          >
+            {t('common.back', 'Back')}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Admin, or the PIN for setting a station or desk up by hand ───────────
+  if (choice === 'admin' || !unlocked) {
+    const forAdmin = choice === 'admin';
     // Nothing set anywhere yet: whoever is here is the first, so they set it.
-    const creating = loaded && !hasPin;
+    const creating = forAdmin && loaded && !hasPin;
+    const proceed = () => (forAdmin ? becomeAdmin() : setUnlocked(true));
 
     const handleCreate = async () => {
       setError('');
@@ -143,7 +224,10 @@ export default function RoleGate() {
       setBusy(true);
       const result = await checkPin(pin);
       setBusy(false);
-      if (result.status === 'ok') return becomeAdmin();
+      if (result.status === 'ok') {
+        setPinInput('');
+        return proceed();
+      }
       if (result.status === 'wrong') {
         setPinInput('');
         return setError(t('gate.wrongPin'));
@@ -152,7 +236,7 @@ export default function RoleGate() {
       // check against. Let them through and say so: refusing would strand
       // whoever is holding it, and a tablet that has never synced has no exams
       // and no roster on it to reach anyway.
-      becomeAdmin();
+      proceed();
     };
 
     const handleRecover = async () => {
@@ -171,7 +255,11 @@ export default function RoleGate() {
             {creating ? t('gate.createPinTitle') : t('gate.enterPinTitle')}
           </h1>
           <p className="text-sm text-gray-500 mt-1 mb-5">
-            {creating ? t('gate.createPinBody') : t('gate.enterPinBody')}
+            {creating
+              ? t('gate.createPinBody')
+              : forAdmin
+                ? t('gate.enterPinBody')
+                : t('gate.enterPinByHandBody')}
           </p>
 
           {showRecovery ? (
@@ -239,7 +327,7 @@ export default function RoleGate() {
             >
               {t('common.back', 'Back')}
             </button>
-            {!creating && (
+            {!creating && forAdmin && (
               <button
                 onClick={() => {
                   setShowRecovery(!showRecovery);
@@ -270,15 +358,16 @@ export default function RoleGate() {
   // ── Examiner station / check-in desk ─────────────────────────────────────
   const needsCircuitAndStation = choice === 'examiner';
   const canConfirm =
-    Boolean(examId) && (!needsCircuitAndStation || (Boolean(circuitId) && Boolean(stationId)));
+    Boolean(exam) && (!needsCircuitAndStation || (Boolean(circuitId) && Boolean(stationId)));
 
   const handleConfirm = async () => {
     const circuit = circuits.find((c) => c.id === circuitId);
     const station = exam?.stations.find((s) => s.id === stationId);
+    if (!exam) return;
     await assign({
       role: choice,
-      examId,
-      examName: exam?.name ?? '',
+      examId: exam.id,
+      examName: exam.name,
       circuitId: needsCircuitAndStation ? circuitId : undefined,
       circuitNumber: needsCircuitAndStation ? circuit?.circuitNumber : undefined,
       stationId: needsCircuitAndStation ? stationId : undefined,
@@ -304,10 +393,14 @@ export default function RoleGate() {
           <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">
             {t('gate.noExamsYet')}
           </p>
+        ) : openExams.length === 0 ? (
+          <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">
+            {t('gate.noOpenExams')}
+          </p>
         ) : (
           <div className="space-y-4">
             <select
-              value={examId}
+              value={effectiveExamId}
               onChange={(e) => {
                 setExamId(e.target.value);
                 setCircuitId('');
@@ -317,7 +410,7 @@ export default function RoleGate() {
               aria-label={t('session.selectExam')}
             >
               <option value="">-- {t('session.selectExam')} --</option>
-              {exams.map((e) => (
+              {openExams.map((e) => (
                 <option key={e.id} value={e.id}>
                   {e.name}
                 </option>
@@ -389,7 +482,10 @@ export default function RoleGate() {
         )}
 
         <button
-          onClick={() => setChoice(null)}
+          onClick={() => {
+            setChoice(null);
+            setUnlocked(false);
+          }}
           className="mt-5 text-sm text-gray-500 hover:text-gray-700"
         >
           {t('common.back', 'Back')}

@@ -2,6 +2,9 @@ import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useSyncStore } from '../../stores/syncStore';
 import { useDeviceStore, homeRouteFor } from '../../stores/deviceStore';
+import { useAdminStore } from '../../stores/adminStore';
+import { useState } from 'react';
+import PinModal from '../PinModal';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -13,6 +16,22 @@ export default function Layout({ children }: LayoutProps) {
   const { isOnline, pendingCount } = useSyncStore();
   const assignment = useDeviceStore((s) => s.assignment);
   const release = useDeviceStore((s) => s.release);
+  const checkPin = useAdminStore((s) => s.checkPin);
+  const [askingPin, setAskingPin] = useState(false);
+
+  // Releasing leads back to the chooser, and the chooser can set this device
+  // up for any open exam by hand — so it costs the admin PIN too. An examiner
+  // who scanned the wrong card just scans the right one; one leaving with
+  // their own phone uses "Clear this device" on the station screen.
+  const releaseWithPin = async (pin: string) => {
+    const result = await checkPin(pin);
+    if (result.status === 'wrong') return false;
+    // 'unknown': no PIN has ever reached this device, so there is nothing to
+    // check against and nothing on the chooser to protect.
+    setAskingPin(false);
+    release();
+    return true;
+  };
 
   const isPinned = assignment.role === 'examiner' || assignment.role === 'checkin';
 
@@ -72,16 +91,22 @@ export default function Layout({ children }: LayoutProps) {
               {assignment.examinerName}
             </span>
           )}
-          {/* Free, because it only leads back to the chooser. Going *up* to
-              admin from there is what costs the PIN. */}
           <button
-            onClick={release}
+            onClick={() => setAskingPin(true)}
             className="ml-auto shrink-0 text-blue-100 hover:text-white underline underline-offset-2"
           >
             {t('device.release')}
           </button>
         </div>
       )}
+
+      <PinModal
+        isOpen={askingPin}
+        onClose={() => setAskingPin(false)}
+        onSubmit={releaseWithPin}
+        title={t('device.releaseTitle')}
+        subtitle={t('device.releaseBody')}
+      />
 
       {/* Main Content */}
       <main className="flex-1 pb-20 md:pb-0 md:ml-64">

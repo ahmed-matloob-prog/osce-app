@@ -41,6 +41,8 @@ interface ExamState {
   // Actions - Session
   startSession: (session: Omit<ExamSession, 'id' | 'startedAt' | 'isActive'>) => Promise<void>;
   endSession: () => Promise<void>;
+  /** Restore the active session from the database after a reload. */
+  resumeSession: () => Promise<ExamSession | null>;
 
   // Actions - Evaluation
   startEvaluation: (
@@ -207,13 +209,30 @@ export const useExamStore = create<ExamState>((set, get) => ({
     set({ currentSession: session });
   },
 
-  // End current session
+  // Pick up a session the page lost by reloading.
+  //
+  // The session used to live only in memory, while its row stayed flagged
+  // active. A phone browser reloads a background tab whenever it likes, and a
+  // scanned card is itself a page load — after either, the examiner was told
+  // "No Active Session" while the device still believed one was running, which
+  // then blocked scanning a card and clearing the device. The unscored student
+  // in progress is not recovered; every submitted mark already is.
+  resumeSession: async () => {
+    const existing = get().currentSession;
+    if (existing) return existing;
+    const active = await db.examSessions.filter((s) => s.isActive).first();
+    if (active) set({ currentSession: active });
+    return active ?? null;
+  },
+
+  // End current session — and any other row still flagged active, so a session
+  // this page never knew about cannot outlive the End Session button.
   endSession: async () => {
-    const { currentSession } = get();
-    if (currentSession) {
-      await db.examSessions.update(currentSession.id, { isActive: false });
-      set({ currentSession: null, currentEvaluation: null });
+    const stale = await db.examSessions.filter((s) => s.isActive).toArray();
+    for (const session of stale) {
+      await db.examSessions.update(session.id, { isActive: false });
     }
+    set({ currentSession: null, currentEvaluation: null });
   },
 
   // Start evaluating a candidate

@@ -132,7 +132,7 @@ check(
   0
 );
 
-console.log('\n4. Examiner is one tap; a wrong PIN gets nobody into admin');
+console.log('\n4. A wrong PIN gets nobody into admin, nor onto a station by hand');
 await B.page.getByRole('button', { name: /Admin/ }).click();
 await B.page.waitForTimeout(800);
 await B.page.getByLabel('PIN (4-6 digits)').fill('1111');
@@ -145,6 +145,12 @@ await B.page.getByRole('button', { name: /^Back$/ }).click();
 await B.page.waitForTimeout(600);
 await B.page.getByRole('button', { name: /Station/ }).first().click();
 await B.page.waitForTimeout(1200);
+// By hand shows the exam list, so it costs the PIN. Examiners use the card.
+check('setting a station up by hand asks for the PIN',
+  await B.page.getByLabel('PIN (4-6 digits)').isVisible(), true);
+await B.page.getByLabel('PIN (4-6 digits)').fill('4321');
+await B.page.getByRole('button', { name: /^Unlock$/ }).click();
+await B.page.waitForTimeout(1200);
 await B.page.getByLabel('Select Exam').selectOption({ label: 'Sync Test Exam' });
 await B.page.waitForTimeout(1500);
 await B.page.getByLabel('Circuit Number').selectOption({ index: 1 });
@@ -152,7 +158,7 @@ await B.page.getByLabel('Your Station').selectOption({ index: 1 });
 await B.page.getByLabel('Examiner Name').fill('Dr Gate');
 await B.page.getByRole('button', { name: /Use this tablet here/i }).click();
 await B.page.waitForTimeout(2000);
-check('the examiner is in, having typed no PIN', await B.role(), 'examiner');
+check('the station is set up', await B.role(), 'examiner');
 check('on its own screen', new URL(B.page.url()).pathname, '/session/setup');
 check(
   'with one navigation entry',
@@ -162,8 +168,11 @@ check(
 
 console.log('\n5. An examiner cannot climb back up to admin');
 await B.page.getByRole('button', { name: /^Release$/ }).click();
+await B.page.waitForTimeout(800);
+for (const d of '4321') await B.page.getByRole('button', { name: new RegExp(`^${d}$`) }).click();
+await B.page.getByRole('button', { name: /^Unlock$/ }).click();
 await B.page.waitForTimeout(1500);
-check('release drops it back to the chooser', await B.role(), 'unset');
+check('release, with the PIN, drops it back to the chooser', await B.role(), 'unset');
 await B.page.getByRole('button', { name: /Admin/ }).click();
 await B.page.waitForTimeout(800);
 check('admin still demands the PIN', await B.page.getByLabel('PIN (4-6 digits)').isVisible(), true);

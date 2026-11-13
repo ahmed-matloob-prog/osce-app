@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { initSyncListeners } from './stores/syncStore';
 import { useDeviceStore, homeRouteFor, isRouteAllowed } from './stores/deviceStore';
@@ -20,6 +20,22 @@ import CheckIn from './pages/CheckIn';
 // Layout
 import Layout from './components/ui/Layout';
 import RoleGate from './components/RoleGate';
+import StationCardLanding from './components/StationCardLanding';
+import ClearedScreen from './components/ClearedScreen';
+import { parseCard, isDeviceCleared, forgetDeviceCleared } from './utils/stationCard';
+
+/**
+ * Read once, at load. A scanned card is a full page load of /station?…, and the
+ * in-app scanner navigates there too, so there is no need to watch for it.
+ */
+const CARD_AT_START = parseCard(window.location.href);
+
+/**
+ * A cleared device stays cleared — no sync, so nothing comes back down — until
+ * somebody scans a card or chooses to set it up again.
+ */
+if (CARD_AT_START) forgetDeviceCleared();
+const CLEARED_AT_START = isDeviceCleared();
 
 /**
  * Keep a pinned device on its own screens.
@@ -39,10 +55,11 @@ function DeviceRouteGuard({ children }: { children: React.ReactNode }) {
 function App() {
   const reconcile = useDeviceStore((s) => s.reconcile);
   const role = useDeviceStore((s) => s.assignment.role);
+  const [card, setCard] = useState(CARD_AT_START);
 
   // Initialize sync listeners on mount
   useEffect(() => {
-    initSyncListeners();
+    if (!CLEARED_AT_START) initSyncListeners();
   }, []);
 
   // A pinned circuit can lose a merge while the tablet is closed, so check on
@@ -50,6 +67,22 @@ function App() {
   useEffect(() => {
     reconcile();
   }, [reconcile]);
+
+  if (CLEARED_AT_START) return <ClearedScreen />;
+
+  // A station card outranks the chooser and an existing pinning alike: it is
+  // the one way onto a station that needs no PIN.
+  if (card) {
+    return (
+      <StationCardLanding
+        card={card}
+        onDone={() => {
+          window.history.replaceState(null, '', '/');
+          setCard(null);
+        }}
+      />
+    );
+  }
 
   // Nothing at all until somebody says what this tablet is for. Rendered
   // outside the router on purpose: there is no URL that gets past it.

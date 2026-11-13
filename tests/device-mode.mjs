@@ -63,19 +63,13 @@ check('the device card offers to reassign it',
   await page.getByRole('button', { name: /Change what this tablet is for/i }).isVisible(), true);
 
 console.log('\n2. Hand it to Station 1, Circuit 2');
-// Settings hands the tablet back to the chooser; the chooser is where its
-// job is picked.
-const handToStation = async (circuitIndex) => {
-  await page.getByRole('button', { name: /Change what this tablet is for/i }).click();
-  await page.waitForTimeout(1500);
-  await page.getByRole('button', { name: /Station/ }).first().click();
-  await page.waitForTimeout(1200);
-  await page.getByLabel('Select Exam').selectOption({ label: 'Sync Test Exam' });
-  await page.waitForTimeout(1500);
-  await page.getByLabel('Circuit Number').selectOption({ index: circuitIndex });
-  await page.getByLabel('Your Station').selectOption({ index: 1 });
+// The examiner's way onto a station: scan the printed card. (Setting one up
+// by hand from the chooser is role-gate.mjs's business.)
+const handToStation = async (circuitNumber) => {
+  await page.goto(BASE + (await F.cardPathFor(circuitNumber)), { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(2500);
   await page.getByLabel('Examiner Name').fill('Dr Pinned');
-  await page.getByRole('button', { name: /Use this tablet here/i }).click();
+  await page.getByRole('button', { name: /Start at this station/i }).click();
   await page.waitForTimeout(2000);
 };
 await handToStation(2);
@@ -133,9 +127,21 @@ check('started on the pinned circuit', session.circuitNumber, 2);
 check('under the pinned examiner name', session.examinerName, 'Dr Pinned');
 
 console.log('\n5. Release hands the tablet back to the chooser');
+// A reload mid-session now goes straight back to scoring, so end the session
+// first, as an examiner would.
 await page.goto(`${BASE}/session/setup`, { waitUntil: 'domcontentloaded' });
-await page.waitForTimeout(1500);
+await page.waitForTimeout(2500);
+check('a reload mid-session returns to scoring', new URL(page.url()).pathname, '/exam/active');
+await page.locator('div.fixed').filter({ hasText: 'Select Candidate' }).last()
+  .getByRole('button', { name: /End Session/i }).click();
+await page.waitForTimeout(3000);
+check('End Session returns to the station screen', new URL(page.url()).pathname, '/session/setup');
 await page.getByRole('button', { name: /^Release$/ }).click();
+await page.waitForTimeout(800);
+// No PIN has been set anywhere in this suite, so there is nothing to check
+// against and any entry releases it. role-gate.mjs covers a real PIN.
+for (const d of '0000') await page.getByRole('button', { name: new RegExp(`^${d}$`) }).click();
+await page.getByRole('button', { name: /^Unlock$/ }).click();
 await page.waitForTimeout(1500);
 check('the role is given up',
   await page.evaluate(() => localStorage.getItem('osce.deviceAssignment')), null);
