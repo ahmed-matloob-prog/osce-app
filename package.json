@@ -19,7 +19,8 @@
     "test:pwa": "node tests/pwa-update.mjs",
     "test:duplicate": "node tests/duplicate-scoring.mjs",
     "test:hazards": "node tests/sync-hazards.mjs",
-    "test:cards": "node tests/station-cards.mjs"
+    "test:cards": "node tests/station-cards.mjs",
+    "test:slow": "node tests/slow-network.mjs"
   },
   "dependencies": {
     "dexie": "^4.2.1",
