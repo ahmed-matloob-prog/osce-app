@@ -161,6 +161,9 @@ export default {
   },
 
   device: {
+    examClosedTitle: 'This exam is closed for examining',
+    examClosedBody:
+      'The organiser has closed {{exam}}, so no new session can start here. Marks already scored are kept. If this is a mistake, ask the organiser to open it again.',
     releaseTitle: 'Release this device',
     releaseBody: 'Needs the admin PIN. To set up a different station, scan its card instead.',
     title: 'This device',

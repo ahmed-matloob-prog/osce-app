@@ -54,12 +54,11 @@ export default function StationCardLanding({ card, onDone }: Props) {
       return;
     }
 
-    // A device that already has the exam can be set up at once, even with no
-    // signal. Anything short of 'ok' may just be out of date, so fetch the
-    // latest and look again before saying no.
-    const local = await checkCard(card);
-    if (local.status === 'ok') return setResult(local);
-    await syncOnceAndWait(25_000);
+    // Online, the cloud decides: this device's copy may say "open" for an exam
+    // the organiser has since closed. Offline, its own copy is all there is,
+    // so a device that already has the exam still works in a hall with no
+    // signal. If the sync fails or runs out of time, the local copy decides.
+    if (navigator.onLine) await syncOnceAndWait(25_000);
     setResult(await checkCard(card));
   }, [card, assignment.examName, assignment.circuitNumber, assignment.stationName, t]);
 
