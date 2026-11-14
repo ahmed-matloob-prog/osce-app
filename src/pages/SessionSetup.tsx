@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useExamStore } from '../stores/examStore';
 import { useDeviceStore } from '../stores/deviceStore';
+import { useSyncStore } from '../stores/syncStore';
 import type { Station } from '../types';
 import ClearDeviceCard from '../components/ClearDeviceCard';
 import { parseCard } from '../utils/stationCard';
@@ -45,9 +46,18 @@ export default function SessionSetup() {
     };
   }, [isStation, navigate]);
 
+  // Again after every sync, so a station learns its exam was closed (or
+  // reopened) without anyone reloading it.
+  const lastSyncAt = useSyncStore((s) => s.lastSyncAt);
   useEffect(() => {
     loadExams();
-  }, [loadExams]);
+  }, [loadExams, lastSyncAt]);
+
+  // And ask for one when this screen opens — after End Session, or on arrival
+  // — rather than waiting for the next mark to trigger it.
+  useEffect(() => {
+    if (isStation) useSyncStore.getState().syncInBackground();
+  }, [isStation]);
 
   // A pinned tablet already knows its exam, so load that circuit list too —
   // the picker below never runs, but starting the session needs the circuit.
@@ -115,9 +125,13 @@ export default function SessionSetup() {
     const pinnedStation = pinnedExam?.stations.find((st) => st.id === assignment.stationId);
     const pinnedCircuit = circuits.find((c) => c.id === assignment.circuitId);
     const ready = Boolean(pinnedExam && pinnedStation && pinnedCircuit);
+    // Closing an exam is the organiser's way to stop it. A session already
+    // running is never cut off — that would strand a student mid-station —
+    // but no new one starts once this device has heard the exam is closed.
+    const closed = Boolean(pinnedExam && !pinnedExam.openForExamining);
 
     const startPinned = async () => {
-      if (!ready || starting) return;
+      if (!ready || closed || starting) return;
       setStarting(true);
       await startSession({
         examId: assignment.examId!,
@@ -149,7 +163,14 @@ export default function SessionSetup() {
             <p className="text-gray-700 mt-3 font-medium">{assignment.examinerName}</p>
           )}
 
-          {ready ? (
+          {closed ? (
+            <div className="mt-6 bg-red-50 border border-red-200 rounded-xl p-4 text-left text-sm text-red-900">
+              <p className="font-medium">{t('device.examClosedTitle')}</p>
+              <p className="mt-1">
+                {t('device.examClosedBody', { exam: pinnedExam?.name ?? '' })}
+              </p>
+            </div>
+          ) : ready ? (
             <button
               onClick={startPinned}
               disabled={starting}

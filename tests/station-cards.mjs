@@ -308,6 +308,47 @@ check('reopened later, it is still cleared',
   await B.page.getByText('This device has been cleared').isVisible(), true);
 check('and nothing has been downloaded again', await left(), []);
 
+console.log('\n11. Closed after a device downloaded it open: the cloud has the last word');
+// G is set up while the exam is open, so its own copy says "open".
+const G = await device('G', { phone: true, start: cardPath(F.EXAM_ID, 1, 'st-1', K1) });
+await G.page.waitForTimeout(4000);
+await G.page.getByLabel('Examiner Name').fill('Dr Late');
+await G.page.getByRole('button', { name: /Start at this station/ }).click();
+await G.page.waitForTimeout(2500);
+check('G is a station on the open exam', (await G.assignment())?.circuitNumber, 1);
+check('and can start a session', await G.page.getByRole('button', { name: /Start Session/i }).isVisible(), true);
+
+// The organiser closes it. G has not heard yet.
+await A.page.goto(`${BASE}/exams`, { waitUntil: 'domcontentloaded' });
+await A.page.waitForTimeout(2000);
+await examRow('Sync Test Exam').getByRole('button', { name: /Open for examining/ }).click();
+await A.page.waitForTimeout(1500);
+await A.sync();
+check('G\'s own copy still says open',
+  Boolean((await readExam(G.page, F.EXAM_ID)).openForExamining), true);
+
+await G.page.goto(BASE + cardPath(F.EXAM_ID, 2, 'st-1', K2), { waitUntil: 'domcontentloaded' });
+await G.page.waitForTimeout(6000);
+check('online, a card is checked with the cloud and refused', /This exam is not open/.test(await G.text()), true);
+check('and G is not moved', (await G.assignment())?.circuitNumber, 1);
+
+await G.page.goto(`${BASE}/session/setup`, { waitUntil: 'domcontentloaded' });
+await G.page.waitForTimeout(5000);
+check('the station screen says the exam is closed',
+  /This exam is closed for examining/.test(await G.text()), true);
+check('and offers no Start Session', await G.page.getByRole('button', { name: /Start Session/i }).count(), 0);
+
+// Reopened: G picks that up as well.
+await A.page.goto(`${BASE}/exams`, { waitUntil: 'domcontentloaded' });
+await A.page.waitForTimeout(2000);
+await examRow('Sync Test Exam').getByRole('button', { name: /^Closed$/ }).click();
+await A.page.waitForTimeout(1500);
+await A.sync();
+await G.page.goto(`${BASE}/session/setup`, { waitUntil: 'domcontentloaded' });
+await G.page.waitForTimeout(5000);
+check('reopened, the station can start again',
+  await G.page.getByRole('button', { name: /Start Session/i }).isVisible(), true);
+
 console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED'}\n`);
 await browser.close();
 process.exit(failures ? 1 : 0);
