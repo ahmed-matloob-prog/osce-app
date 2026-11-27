@@ -1,4 +1,4 @@
-// Sync hazards — six ways sync used to lose work without saying so.
+// Sync hazards — seven ways sync used to lose work without saying so.
 //
 // Each section is a scenario that once failed silently: a mark stuck on a
 // tablet for good, an exam edit quietly reverted, a device that stopped
@@ -297,6 +297,43 @@ const spent = (await cloud('config')).find((d) => d.name.endsWith('/admin'))
   .find((v) => v.mapValue.fields.code.stringValue === 'spent-code');
 check('the spent code is still spent in the cloud',
   spent?.mapValue.fields.used.booleanValue, true);
+
+// ===========================================================================
+console.log('\n7. An exam whose station was imported from a spreadsheet');
+// ===========================================================================
+// The station import leaves nameAr, scenarioAr, tasksAr and the item textAr
+// as undefined inside the stations array. Firestore refused the whole exams
+// upload ("Unsupported field value: undefined") until the clean-up reached
+// nested fields.
+const IMPORTED_ID = '00000000-exam-0000-0000-000000000007';
+await A.page.evaluate(({ exam }) => {
+  // Built in the page so the undefined fields survive into IndexedDB.
+  exam.stations = exam.stations.map((s) => ({
+    ...s, nameAr: undefined, scenarioAr: undefined, tasksAr: undefined,
+    examinationFindingsAr: undefined,
+    checklistItems: s.checklistItems.map((i) => ({ ...i, textAr: undefined })),
+  }));
+  exam.stations[0].tasks = ['Examine', undefined]; // an undefined inside a list, too
+  return new Promise((resolve, reject) => {
+    const open = indexedDB.open('OSCEDatabase');
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const tx = open.result.transaction('examTemplates', 'readwrite');
+      tx.objectStore('examTemplates').put({ ...exam, updatedAt: new Date(), createdAt: new Date() });
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => reject(tx.error?.message ?? 'tx failed');
+    };
+  });
+}, { exam: { ...F.exam, id: IMPORTED_ID, name: 'Imported Station Exam' } });
+check('the station really holds undefined fields on the device',
+  (await rows(A, 'examTemplates')).find((e) => e.id === IMPORTED_ID)?.stations[0].hasOwnProperty('nameAr'), true);
+await A.page.reload({ waitUntil: 'domcontentloaded' });
+await A.page.waitForTimeout(6000);
+const importedDoc = (await cloud('exams')).find((d) => d.name.endsWith(IMPORTED_ID));
+check('the exam reaches the cloud', Boolean(importedDoc), true);
+check('with its station and checklist intact',
+  importedDoc?.fields.stations.arrayValue.values[0].mapValue.fields.checklistItems.arrayValue.values.length,
+  F.exam.stations[0].checklistItems.length);
 
 console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED'}\n`);
 await browser.close();

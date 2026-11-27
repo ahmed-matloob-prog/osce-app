@@ -609,9 +609,29 @@ export async function fullSync(): Promise<{
  * fails the whole batch. Restoring a deleted exam, student or check-in sets
  * `deletedAt: undefined`, so without this a restore quietly broke sync for
  * everything that shared its batch.
+ *
+ * It has to reach inside nested lists and objects too: a station imported
+ * from a spreadsheet carries `nameAr: undefined` (and the other Arabic
+ * fields) inside the exam's `stations` array, and that alone failed the
+ * exams upload. Timestamps and FieldValues are not plain objects, so they
+ * pass through untouched.
  */
+function withoutUndefined(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.filter((v) => v !== undefined).map(withoutUndefined);
+  }
+  if (value !== null && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype) {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([, v]) => v !== undefined)
+        .map(([k, v]) => [k, withoutUndefined(v)])
+    );
+  }
+  return value;
+}
+
 function stripUndefined(row: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(row).filter(([, v]) => v !== undefined));
+  return withoutUndefined(row) as Record<string, unknown>;
 }
 
 async function pushCollection<T extends { id: string }>(
